@@ -42,9 +42,7 @@ func (f *Filecab) Save(record map[string]string) error {
     f.mu.Lock()
     defer f.mu.Unlock()
     
-    
     isNew := false
-    
     var originalID = ""
     if strings.HasSuffix(record["id"], "/") {
         originalID = record["id"]
@@ -133,6 +131,8 @@ func (f *Filecab) Save(record map[string]string) error {
 // thePath will be the id prefix and it will start at "first"
 // and go along the linked list until there is no "next"
 func (f *Filecab) Load(thePath string) ([]map[string]string, error) {
+    f.mu.RLock()
+    defer f.mu.RUnlock()
     // lengthPath := f.RootDir + "/" + thePath + "/length"
     // existingLengthData, err := os.ReadFile(lengthPath)
     // if err != nil {
