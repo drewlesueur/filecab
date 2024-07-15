@@ -7,15 +7,20 @@ import (
     "log"
     "strconv"
     "time"
+    "context"
     "github.com/stretchr/testify/assert"
     "database/sql"
     "encoding/json"
     _ "github.com/mattn/go-sqlite3"
+    "go.mongodb.org/mongo-driver/bson"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var fc *Filecab
 
 const maxLoop = 10000
+// const maxLoop = 10
 
 // TODO: rwlock
 func TestFilecab(t *testing.T) {
@@ -48,7 +53,7 @@ func TestFilecab(t *testing.T) {
         err = fc.Save(r)
         assert.Nil(t, err)
     }
-    fmt.Println("writing took", time.Since(start))
+    fmt.Println("writing took", time.Since(start), "_lime")
     
     start = time.Now()
     records, err := fc.Load("accounts")
@@ -58,7 +63,7 @@ func TestFilecab(t *testing.T) {
     // assert.Nil(t, err)
     // fmt.Println(string(indentJSON))
     _ = json.Marshal
-    fmt.Println("reading took", time.Since(start))
+    fmt.Println("reading took", time.Since(start), "_lime")
     
 }
 
@@ -84,36 +89,6 @@ func TestSqliteInsertion(t *testing.T) {
         log.Fatal(err)
     }
     
-    // explain PRAGMA journal_mode = WAL;
-
-    // The `PRAGMA journal_mode = WAL;` statement in SQLite sets the journal mode of the database to Write-Ahead Logging (WAL). The primary purpose of the journal mode is to determine how SQLite handles transactions and ensures data integrity.
-    // ### What is Write-Ahead Logging (WAL)?
-    // In traditional rollback journal mode, SQLite uses a rollback journal to temporarily save the state of the database before any changes are made during a transaction. If a transaction fails, SQLite can use the rollback journal to revert the database to its previous state.
-    // Write-Ahead Logging, on the other hand, is a more sophisticated journaling mode that offers several advantages over the traditional rollback journal:
-    // 1. **Concurrency**:
-    //    - **Better Concurrency**: WAL mode allows for better concurrent read and write access. Readers do not block writers, and writers do not block readers, meaning that the database can be read while a write is ongoing.
-    // 2. **Checkpointing**:
-    //    - **Checkpoint Process**: WAL maintains a separate log file where it records changes. Periodically, the changes in the WAL file are merged into the main database file by a process called "checkpointing."
-    //    - In WAL mode, SQLite does not overwrite the original database file until a checkpoint operation is performed, which can be done automatically or manually.
-    // 3. **Performance**:
-    //    - **Improved Write Performance**: Writes in WAL mode are generally faster because they result in sequential writes to the WAL file, as opposed to random writes in rollback journal mode.
-    //    - However, the read operations can sometimes be slightly slower if the WAL file is large, as SQLite has to read from both the main database file and the WAL file.
-    // 4. **Recovery**:
-    //    - **Enhanced Recovery**: In the event of a crash, WAL mode can provide faster recovery times because it replays the WAL log to restore the database to a consistent state.
-    // ### Example Usage of PRAGMA journal_mode
-    // ```go
-    // _, err = db.Exec(`PRAGMA journal_mode = WAL;`)
-    // if err != nil {
-    //     log.Fatal(err)
-    // }
-    // ```
-    // With this PRAGMA setting, you're configuring SQLite to use WAL mode for better performance and enhanced concurrency. It should be noted that while WAL mode has many benefits, it's essential to understand its behavior and ensure that your application handles checkpointing appropriately.
-    // ### Additional Considerations
-    // - **Checkpointing Frequency**: The frequency and timing of checkpoints can affect the performance and the size of the WAL file.
-    // - **Disk Space**: The WAL file can grow in size depending on the volume of write operations and the frequency of checkpoints.
-    // Switching to WAL mode is often beneficial, but you should consider these factors in the context of your specific application requirements.
-    
-    
     assert.Nil(t, err)
     defer db.Close()
     _, err = db.Exec(`CREATE TABLE accounts (id TEXT, name TEXT, birthdate TEXT, quote TEXT)`)
@@ -138,7 +113,7 @@ func TestSqliteInsertion(t *testing.T) {
         _, err = stmt.Exec(r...)
         assert.Nil(t, err)
     }
-    fmt.Println("sqlite write took", time.Since(start))
+    fmt.Println("sqlite write took", time.Since(start), "_orangered")
     
     // add code to select * from accounts
     // and marshal in to a []map[string]string
@@ -167,8 +142,70 @@ func TestSqliteInsertion(t *testing.T) {
     // indentJSON, err := json.MarshalIndent(accounts, "", "  ")
     // assert.Nil(t, err)
     // fmt.Println(string(indentJSON))
-    fmt.Println("sqlite read took", time.Since(start))
+    fmt.Println("sqlite read took", time.Since(start), "_orangered")
 }
+
+
+
+// mongod --port 27018 --dbpath /home/ubuntu/delme_my_mongo --bind_ip 127.0.0.1
+
+// write the same function but for mongodb
+// delete the existing mongo db and create it as part of the test
+func TestMongoInsertion(t *testing.T) {
+    clientOptions := options.Client().ApplyURI("mongodb://localhost:27018")
+    client, err := mongo.Connect(context.TODO(), clientOptions)
+    assert.Nil(t, err)
+    defer client.Disconnect(context.TODO())
+    err = client.Database("delme_my_db").Drop(context.TODO())
+    assert.Nil(t, err)
+    db := client.Database("delme_my_db")
+    col := db.Collection("accounts")
+    r := bson.D{
+        {"id", "accounts/"},
+        {"name", "Mickey"},
+        {"birthdate", "2001-01-01"},
+        {"quote", "life is fun\nI like life"},
+    }
+    _, err = col.InsertOne(context.TODO(), r)
+    assert.Nil(t, err)
+    r2 := bson.D{
+        {"id", "accounts/"},
+        {"name", "Minnie"},
+        {"birthdate", "2002-02-02"},
+        {"quote", "I want to succeed\nat everything"},
+    }
+    _, err = col.InsertOne(context.TODO(), r2)
+    assert.Nil(t, err)
+    start := time.Now()
+    for i := 0; i < maxLoop; i++ {
+        r := bson.D{
+            {"id", "accounts/"},
+            {"name", "Mr. " + strconv.Itoa(i)},
+            {"birthdate", "2001-01-01"},
+            {"quote", "I want to succeed\nat everything"},
+        }
+        _, err = col.InsertOne(context.TODO(), r)
+        assert.Nil(t, err)
+    }
+    fmt.Println("mongo write took", time.Since(start), "_saddlebrown")
+    start = time.Now()
+    cursor, err := col.Find(context.TODO(), bson.D{})
+    assert.Nil(t, err)
+    defer cursor.Close(context.TODO())
+    var accounts []map[string]string
+    for cursor.Next(context.TODO()) {
+        var result bson.M
+        err := cursor.Decode(&result)
+        assert.Nil(t, err)
+        account := make(map[string]string)
+        for k, v := range result {
+            account[k] = fmt.Sprintf("%v", v)
+        }
+        accounts = append(accounts, account)
+    }
+    fmt.Println("mongo read took", time.Since(start), "_saddlebrown")
+}
+
 
 
 

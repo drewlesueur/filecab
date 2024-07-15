@@ -4,6 +4,7 @@ package filecab
 import (
     "sync"
     "strings"
+    "strconv"
     "sort"
     "time"
     "fmt"
@@ -37,7 +38,6 @@ type Filecab struct {
 
 
 // special fields
-
 func (f *Filecab) Save(record map[string]string) error {
     f.mu.Lock()
     defer f.mu.Unlock()
@@ -81,6 +81,11 @@ func (f *Filecab) Save(record map[string]string) error {
             if err != nil {
                 return err
             }
+            lengthPath := f.RootDir + "/" + originalID + "length"
+            err = os.WriteFile(lengthPath, []byte("1"), 0644)
+            if err != nil {
+                return err
+            }
         } else if err == nil {
             // fmt.Println(record["name"] + " making a next")
             nextPath := f.RootDir + "/" + originalID + "last/next"
@@ -94,9 +99,27 @@ func (f *Filecab) Save(record map[string]string) error {
                     return err
                 }
             }
+            // os.Remove(lastPath)
+            
+            
             if err := os.Symlink(fullDir, lastPath); err != nil {
                 return err
             }
+            
+            // lengthPath := f.RootDir + "/" + originalID + "length"
+            // existingLengthData, err := os.ReadFile(lengthPath)
+            // if err != nil {
+            //     return err
+            // }
+            // existingLength, err := strconv.Atoi(string(existingLengthData))
+            // if err != nil {
+            //     return err
+            // }
+            // newLength := existingLength + 1
+            // err = os.WriteFile(lengthPath, []byte(strconv.Itoa(newLength)), 0644)
+            // if err != nil {
+            //     return err
+            // }
         } else {
             // fmt.Println(record["name"] + " actual error", err)
             return err
@@ -110,9 +133,23 @@ func (f *Filecab) Save(record map[string]string) error {
 // thePath will be the id prefix and it will start at "first"
 // and go along the linked list until there is no "next"
 func (f *Filecab) Load(thePath string) ([]map[string]string, error) {
+    // lengthPath := f.RootDir + "/" + thePath + "/length"
+    // existingLengthData, err := os.ReadFile(lengthPath)
+    // if err != nil {
+    //     return nil, err
+    // }
+    // existingLength, err := strconv.Atoi(string(existingLengthData))
+    // if err != nil {
+    //     return nil, err
+    // }
+    
+    
     var records []map[string]string
+    // var records = make([]map[string]string, existingLength)
     recordDir := f.RootDir + "/" + thePath + "/first"
+    i := -1
     for {
+        i++
         recordFile := recordDir + "/record.txt"
         data, err := os.ReadFile(recordFile)
         if err != nil {
@@ -120,6 +157,7 @@ func (f *Filecab) Load(thePath string) ([]map[string]string, error) {
         }
         record := deserializeRecord(string(data))
         records = append(records, record)
+        // records[i] = record
         nextLink := recordDir + "/next"
         if _, err := os.Lstat(nextLink); os.IsNotExist(err) {
             break
@@ -140,6 +178,7 @@ func (f *Filecab) Load(thePath string) ([]map[string]string, error) {
 // and then truncate to at most 32 chars
 var nameRE *regexp.Regexp
 func init() {
+    _ = strconv.Itoa
 	nameRE = regexp.MustCompile(`[^a-zA-Z0-9]`)
 }
 func nameize(s string) string {
