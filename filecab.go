@@ -27,10 +27,9 @@ import (
 
 
 type Filecab struct {
-    mu sync.Mutex
+    mu     sync.RWMutex
     RootDir string
 }
-
 // 2024/07_14
 
 // TODO: add log implementedemented as regular flow
@@ -42,6 +41,8 @@ type Filecab struct {
 func (f *Filecab) Save(record map[string]string) error {
     f.mu.Lock()
     defer f.mu.Unlock()
+    
+    
     isNew := false
     
     var originalID = ""
@@ -60,7 +61,7 @@ func (f *Filecab) Save(record map[string]string) error {
         return err
     }
     serialized := serializeRecord(record)
-    filePath := fullDir + "/" + nameize(record["name"]) + ".txt"
+    filePath := fullDir + "/" + "record.txt"
     err = os.WriteFile(filePath, []byte(serialized), 0644)
     if err != nil {
         return err
@@ -105,6 +106,35 @@ func (f *Filecab) Save(record map[string]string) error {
     // fmt.Println(serialized)
     return nil
 }
+// implement the load function that loads all to a map[string]string
+// thePath will be the id prefix and it will start at "first"
+// and go along the linked list until there is no "next"
+func (f *Filecab) Load(thePath string) ([]map[string]string, error) {
+    var records []map[string]string
+    recordDir := f.RootDir + "/" + thePath + "/first"
+    for {
+        recordFile := recordDir + "/record.txt"
+        data, err := os.ReadFile(recordFile)
+        if err != nil {
+            return nil, err
+        }
+        record := deserializeRecord(string(data))
+        records = append(records, record)
+        nextLink := recordDir + "/next"
+        if _, err := os.Lstat(nextLink); os.IsNotExist(err) {
+            break
+        } else if err != nil {
+            return nil, err
+        } else {
+            nextPath, err := os.Readlink(nextLink)
+            if err != nil {
+                return nil, err
+            }
+            recordDir = nextPath
+        }
+    }
+    return records, nil
+}
 
 // function in Go to replace all non alphanumeric with underscore
 // and then truncate to at most 32 chars
@@ -133,6 +163,7 @@ func New(rootDir string) *Filecab {
     }
 }
 
+
 func serializeRecord(obj map[string]string) string {
     keys := make([]string, 0, len(obj))
     for key := range obj {
@@ -154,6 +185,36 @@ func serializeRecord(obj map[string]string) string {
     }
     return strings.Join(lines, "\n") + "\n\n"
 }
+
+// write the inverse of this function
+// to turn the serialized value to a map[string]string
+func deserializeRecord(data string) map[string]string {
+    result := make(map[string]string)
+    lines := strings.Split(data, "\n")
+    var currentKey string
+    var currentValue []string
+    for _, line := range lines {
+        if strings.HasPrefix(line, "    ") {
+            currentValue = append(currentValue, strings.TrimPrefix(line, "    "))
+        } else if strings.Contains(line, ":") {
+            if currentKey != "" {
+                result[currentKey] = strings.Join(currentValue, "\n")
+            }
+            parts := strings.SplitN(line, ": ", 2)
+            currentKey = parts[0]
+            if len(parts) == 2 {
+                currentValue = []string{parts[1]}
+            } else {
+                currentValue = []string{}
+            }
+        }
+    }
+    if currentKey != "" {
+        result[currentKey] = strings.Join(currentValue, "\n")
+    }
+    return result
+}
+
 
 func generateUniqueID() string {
 	randomBytes := make([]byte, 8)
