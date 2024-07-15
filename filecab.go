@@ -10,8 +10,9 @@ import (
     "fmt"
     "math/rand"
     "encoding/hex"
-	"regexp"
-	"os"
+    "regexp"
+    "os"
+    "path/filepath"
 )
 
 
@@ -53,21 +54,21 @@ func (f *Filecab) Save(record map[string]string) error {
     
     record["id"] = strings.ReplaceAll(record["id"], "..", "")
     fullDir := f.RootDir + "/" + record["id"]
-    // fmt.Println("fullDir", fullDir)
-    err := os.MkdirAll(fullDir, os.ModePerm)
-    if err != nil {
-        return err
-    }
-    serialized := serializeRecord(record)
     filePath := fullDir + "/" + "record.txt"
-    err = os.WriteFile(filePath, []byte(serialized), 0644)
-    if err != nil {
-        return err
-    }
-
     if isNew {
+        // fmt.Println("fullDir", fullDir)
+        err := os.MkdirAll(fullDir, os.ModePerm)
+        if err != nil {
+            return err
+        }
+        serialized := serializeRecord(record)
+        err = os.WriteFile(filePath, []byte(serialized), 0644)
+        if err != nil {
+            return err
+        }
+        
         lastPath := f.RootDir + "/" + originalID + "last"
-        _, err := os.Stat(lastPath);
+        _, err = os.Stat(lastPath);
         if os.IsNotExist(err) {
             // fmt.Println(record["name"] + " made a new last")
             err = os.Symlink(fullDir, lastPath)
@@ -122,7 +123,26 @@ func (f *Filecab) Save(record map[string]string) error {
             // fmt.Println(record["name"] + " actual error", err)
             return err
         }
-    }
+    } else {
+        // give me code for just this else case
+        // where we read the existing record.txt, deserialize it
+        // (there is a deserializeRecord function already)
+        // and we modifiy it then re-save
+        existingData, err := os.ReadFile(filePath)
+        if err != nil {
+            return err
+        }
+        existingRecord := deserializeRecord(string(existingData))
+        // Modify the existing record as needed
+        for k, v := range record {
+            existingRecord[k] = v
+        }
+        serialized := serializeRecord(existingRecord)
+        err = os.WriteFile(filePath, []byte(serialized), 0644)
+        if err != nil {
+            return err
+        }
+   }
 
     // fmt.Println(serialized)
     return nil
@@ -170,6 +190,34 @@ func (f *Filecab) Load(thePath string) ([]map[string]string, error) {
             }
             recordDir = nextPath
         }
+    }
+    return records, nil
+}
+
+func (f *Filecab) Load2(thePath string) ([]map[string]string, error) {
+    f.mu.RLock()
+    defer f.mu.RUnlock()
+    var records []map[string]string
+    theDir := f.RootDir + "/" + thePath
+    err := filepath.Walk(theDir, func(path string, info os.FileInfo, err error) error {
+        if err != nil {
+            return err
+        }
+        if info.IsDir() && strings.Count(path[len(theDir):], string(os.PathSeparator)) > 3 {
+            return filepath.SkipDir
+        }
+        if !info.IsDir() && info.Name() == "record.txt" && strings.Count(path[len(theDir):], string(os.PathSeparator)) == 3 {
+            data, err := os.ReadFile(path)
+            if err != nil {
+                return err
+            }
+            record := deserializeRecord(string(data))
+            records = append(records, record)
+        }
+        return nil
+    })
+    if err != nil {
+        return nil, err
     }
     return records, nil
 }

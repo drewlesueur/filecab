@@ -19,7 +19,7 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 10000
+const maxLoop = 1_000
 // const maxLoop = 10
 
 // TODO: rwlock
@@ -65,6 +65,15 @@ func TestFilecab(t *testing.T) {
     _ = json.Marshal
     fmt.Println("reading took", time.Since(start), "_lime")
     
+    
+    start = time.Now()
+    for i, r := range records {
+        r["camping"] = "camping in " + strconv.Itoa(i) + " trees"
+        err = fc.Save(r)
+        assert.Nil(t, err)
+    }
+    fmt.Println("updating took", time.Since(start), "_lime")
+    
 }
 
 // write a similar test for Go to insert same number of records to
@@ -91,21 +100,33 @@ func TestSqliteInsertion(t *testing.T) {
     
     assert.Nil(t, err)
     defer db.Close()
-    _, err = db.Exec(`CREATE TABLE accounts (id TEXT, name TEXT, birthdate TEXT, quote TEXT)`)
+    // _, err = db.Exec(`CREATE TABLE accounts (id TEXT, name TEXT, birthdate TEXT, quote TEXT, camping TEXT)`)
+    // make id the primary key auto increment
+
+    _, err = db.Exec(`
+        CREATE TABLE accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            birthdate TEXT,
+            quote TEXT,
+            camping TEXT
+        )
+    `)
+    
+    
     assert.Nil(t, err)
-    stmt, err := db.Prepare(`INSERT INTO accounts (id, name, birthdate, quote) VALUES (?, ?, ?, ?)`)
+    stmt, err := db.Prepare(`INSERT INTO accounts (name, birthdate, quote) VALUES (?, ?, ?)`)
     assert.Nil(t, err)
     defer stmt.Close()
-    r := []interface{}{"accounts/", "Mickey", "2001-01-01", "life is fun\nI like life"}
+    r := []interface{}{"Mickey", "2001-01-01", "life is fun\nI like life"}
     _, err = stmt.Exec(r...)
     assert.Nil(t, err)
-    r2 := []interface{}{"accounts/", "Minnie", "2002-02-02", "I want to succeed\nat everything"}
+    r2 := []interface{}{"Minnie", "2002-02-02", "I want to succeed\nat everything"}
     _, err = stmt.Exec(r2...)
     assert.Nil(t, err)
     start := time.Now()
     for i := 0; i < maxLoop; i++ {
         r := []interface{}{
-            "accounts/",
             "Mr. " + strconv.Itoa(i),
             "2001-01-01",
             "I want to succeed\nat everything",
@@ -143,11 +164,22 @@ func TestSqliteInsertion(t *testing.T) {
     // assert.Nil(t, err)
     // fmt.Println(string(indentJSON))
     fmt.Println("sqlite read took", time.Since(start), "_orangered")
+    start = time.Now()
+    for i, account := range accounts {
+        account["camping"] = "camping in " + strconv.Itoa(i) + " trees"
+        _, err = db.Exec(`UPDATE accounts SET camping = ? WHERE id = ?`, account["camping"], account["id"])
+        assert.Nil(t, err)
+    }
+    fmt.Println("sqlite update took", time.Since(start), "_orangered")
 }
 
 
 
+
+
+
 // mongod --port 27018 --dbpath /home/ubuntu/delme_my_mongo --bind_ip 127.0.0.1
+// are there more flags we can use for optimization
 
 // write the same function but for mongodb
 // delete the existing mongo db and create it as part of the test
@@ -161,7 +193,6 @@ func TestMongoInsertion(t *testing.T) {
     db := client.Database("delme_my_db")
     col := db.Collection("accounts")
     r := bson.D{
-        {"id", "accounts/"},
         {"name", "Mickey"},
         {"birthdate", "2001-01-01"},
         {"quote", "life is fun\nI like life"},
@@ -169,7 +200,6 @@ func TestMongoInsertion(t *testing.T) {
     _, err = col.InsertOne(context.TODO(), r)
     assert.Nil(t, err)
     r2 := bson.D{
-        {"id", "accounts/"},
         {"name", "Minnie"},
         {"birthdate", "2002-02-02"},
         {"quote", "I want to succeed\nat everything"},
@@ -179,7 +209,6 @@ func TestMongoInsertion(t *testing.T) {
     start := time.Now()
     for i := 0; i < maxLoop; i++ {
         r := bson.D{
-            {"id", "accounts/"},
             {"name", "Mr. " + strconv.Itoa(i)},
             {"birthdate", "2001-01-01"},
             {"quote", "I want to succeed\nat everything"},
@@ -204,7 +233,44 @@ func TestMongoInsertion(t *testing.T) {
         accounts = append(accounts, account)
     }
     fmt.Println("mongo read took", time.Since(start), "_saddlebrown")
+
+    // start = time.Now()
+    // for i, account := range accounts {
+    //     account["camping"] = "camping in " + strconv.Itoa(i) + " trees"
+    //     filter := bson.D{
+    //         {"id", account["id"]},
+    //     }
+    //     update := bson.D{
+    //         {"$set", bson.D{
+    //             {"camping", account["camping"]},
+    //         }},
+    //     }
+    //     _, err = col.UpdateOne(context.TODO(), filter, update)
+    //     assert.Nil(t, err)
+    // }
+    // fmt.Println("mongo update took", time.Since(start), "_saddlebrown")
+    
+
+    start = time.Now()
+    for i, account := range accounts {
+        account["camping"] = "camping in " + strconv.Itoa(i) + " trees"
+        filter := bson.D{
+            {"_id", account["_id"]},
+        }
+        update := bson.D{
+            {"$set", bson.D{
+                {"camping", account["camping"]},
+            }},
+        }
+        _, err = col.UpdateOne(context.TODO(), filter, update)
+        assert.Nil(t, err)
+    }
+    fmt.Println("mongo update took", time.Since(start), "_saddlebrown")
+    
 }
+
+// now give me just the code to do similar updates for the second function, and time it like the first
+
 
 
 
