@@ -141,10 +141,121 @@ func (f *Filecab) Save_old(record map[string]string) error {
     return nil
 }
 
-
 // update this code to also add a prev symmlink to the previous record
 // to make a doubly linked list basically
 func (f *Filecab) Save(record map[string]string) error {
+    f.mu.Lock()
+    defer f.mu.Unlock()
+    
+    isNew := false
+    var originalID = ""
+    if strings.HasSuffix(record["id"], "/") {
+        originalID = record["id"]
+        now := time.Now()
+        record["id"] += now.Format("2006/01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        // record["id"] += fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        isNew = true
+    }
+    
+    record["id"] = strings.ReplaceAll(record["id"], "..", "")
+    fullDir := f.RootDir + "/" + record["id"]
+    filePath := fullDir + "/" + "record.txt"
+    if isNew {
+        var err error
+        
+        err = os.MkdirAll(fullDir, os.ModePerm)
+        if err != nil {
+            return err
+        }
+        errCh := make(chan error, 10)
+        var errChCount = 0
+        serializedBytes := serializeRecordToBytes(record)
+        errChCount++
+        go func() {
+            errCh <- os.WriteFile(filePath, serializedBytes, 0644)
+        }()
+        
+        lastPath := f.RootDir + "/" + originalID + "last"
+        _, err = os.Stat(lastPath);
+        if os.IsNotExist(err) {
+            err = os.Symlink(fullDir, lastPath)
+            if err != nil {
+                return err
+            }
+            firstPath := f.RootDir + "/" + originalID + "first"
+            err = os.Symlink(fullDir, firstPath)
+            if err != nil {
+                return err
+            }
+            lengthPath := f.RootDir + "/" + originalID + "length"
+            err = os.WriteFile(lengthPath, []byte("1"), 0644)
+            if err != nil {
+                return err
+            }
+        } else if err == nil {
+            prevLastDir, err := os.Readlink(lastPath)
+            if err != nil {
+                return err
+            }
+            // "next" part
+            errChCount++
+            go func() {
+                nextPath := prevLastDir + "/next"
+                errCh <- os.Symlink(fullDir, nextPath)
+            }()
+            // "prev" part
+            errChCount++
+            go func() {
+                prevPath := fullDir + "/prev"
+                errCh <- os.Symlink(prevLastDir, prevPath)
+            }()
+            // "last" part including removing and renaming
+            errChCount += 2
+            go func() {
+                if err := os.Remove(lastPath); err != nil && !os.IsNotExist(err) {
+                    errCh <- err
+                    errCh <- nil
+                    return
+                }
+                errCh <- nil
+                errCh <- os.Symlink(fullDir, lastPath)
+            }()
+            
+            // slower barely
+            // newSymlink := lastPath + ".new"
+            // if err := os.Symlink(fullDir, newSymlink); err != nil {
+            //     return err
+            // }
+            // if err := os.Rename(newSymlink, lastPath); err != nil {
+            //     return err
+            // }
+        } else {
+            return err
+        }
+        for i := 0; i < errChCount; i++ {
+            if err := <-errCh; err != nil {
+                return err
+            }
+        }
+    } else {
+        existingData, err := os.ReadFile(filePath)
+        if err != nil {
+            return err
+        }
+        existingRecord := deserializeRecordBytes(existingData)
+        for k, v := range record {
+            existingRecord[k] = v
+        }
+        serializedBytes := serializeRecordToBytes(existingRecord)
+        err = os.WriteFile(filePath, []byte(serializedBytes), 0644)
+        if err != nil {
+            return err
+        }
+    }
+    return nil
+}
+
+func (f *Filecab) Save_old2(record map[string]string) error {
     f.mu.Lock()
     defer f.mu.Unlock()
     
@@ -227,7 +338,6 @@ func (f *Filecab) Save(record map[string]string) error {
     }
     return nil
 }
-
 
 
 
@@ -526,4 +636,3 @@ func generateUniqueID() string {
 	randomPart := hex.EncodeToString(randomBytes)
 	return randomPart
 }
-

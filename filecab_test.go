@@ -20,8 +20,9 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 100_000
+const maxLoop = 10_000
 const repeat = 1
+const extraFields = 100
 // const maxLoop = 10
 
 // TODO: rwlock
@@ -52,21 +53,25 @@ func TestFilecab(t *testing.T) {
             "birthdate": "2001-01-01",
             "quote": strings.Repeat("I want to succeed\nat everything\n", repeat),
         }
+        for j := 0; j < extraFields; j++ {
+            jStr := strconv.Itoa(j)
+            r["field" + jStr] = "value" + jStr
+        }
+        // err = fc.Save(r)
         err = fc.Save(r)
         assert.Nil(t, err)
     }
 
     fmt.Println("writing took", time.Since(start), "_lime")
     
-    start = time.Now()
-    records, err := fc.Load("accounts")
-    assert.Nil(t, err)
-    fmt.Println("number of records: ", len(records))
-    fmt.Println("reading took", time.Since(start), "_lime")
+    // start = time.Now()
+    // records, err := fc.Load("accounts")
+    // assert.Nil(t, err)
+    // fmt.Println("number of records: ", len(records))
+    // fmt.Println("reading took", time.Since(start), "_lime")
     
-    
     start = time.Now()
-    records, err = fc.Load3("accounts")
+    records, err := fc.Load3("accounts")
     assert.Nil(t, err)
     fmt.Println("number of records: ", len(records))
     fmt.Println("reading2 took", time.Since(start), "_lime")
@@ -224,10 +229,15 @@ func TestMongoInsertion(t *testing.T) {
             {"birthdate", "2001-01-01"},
             {"quote",  strings.Repeat("I want to succeed\nat everything\n", repeat)},
         }
+        for j := 0; j < extraFields; j++ {
+            jStr := strconv.Itoa(j)
+            r = append(r, bson.E{"field" + jStr, "value" + jStr})
+        }
         _, err = col.InsertOne(context.TODO(), r)
         assert.Nil(t, err)
     }
     fmt.Println("mongo write took", time.Since(start), "_saddlebrown")
+
     start = time.Now()
     cursor, err := col.Find(context.TODO(), bson.D{})
     assert.Nil(t, err)
@@ -244,23 +254,24 @@ func TestMongoInsertion(t *testing.T) {
         accounts = append(accounts, account)
     }
     fmt.Println("mongo read took", time.Since(start), "_saddlebrown")
-
-    // start = time.Now()
-    // for i, account := range accounts {
-    //     account["camping"] = "camping in " + strconv.Itoa(i) + " trees"
-    //     filter := bson.D{
-    //         {"id", account["id"]},
-    //     }
-    //     update := bson.D{
-    //         {"$set", bson.D{
-    //             {"camping", account["camping"]},
-    //         }},
-    //     }
-    //     _, err = col.UpdateOne(context.TODO(), filter, update)
-    //     assert.Nil(t, err)
-    // }
-    // fmt.Println("mongo update took", time.Since(start), "_saddlebrown")
     
+    start = time.Now()
+    cursor, err = col.Find(context.TODO(), bson.D{})
+    assert.Nil(t, err)
+    defer cursor.Close(context.TODO())
+    accounts = nil
+    for cursor.Next(context.TODO()) {
+        var result bson.M
+        err := cursor.Decode(&result)
+        assert.Nil(t, err)
+        account := make(map[string]string)
+        for k, v := range result {
+            account[k] = fmt.Sprintf("%v", v)
+        }
+        accounts = append(accounts, account)
+    }
+    fmt.Println("mongo read2 took", time.Since(start), "_saddlebrown")
+
 
     start = time.Now()
     for i, account := range accounts {
