@@ -21,6 +21,7 @@ import (
 var fc *Filecab
 
 const maxLoop = 10_000
+// const maxLoop = 10
 const repeat = 1
 const extraFields = 100
 // const maxLoop = 10
@@ -84,8 +85,11 @@ func TestFilecab(t *testing.T) {
     
     start = time.Now()
     for i, r := range records {
-        r["camping"] = "camping in " + strconv.Itoa(i) + " trees"
-        err = fc.Save(r)
+        updatedR := map[string]string{
+            "id": r["id"],
+            "camping": "camping in " + strconv.Itoa(i) + " trees",
+        }
+        err = fc.Save(updatedR)
         assert.Nil(t, err)
     }
     fmt.Println("updating took", time.Since(start), "_lime")

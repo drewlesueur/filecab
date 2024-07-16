@@ -146,7 +146,27 @@ func (f *Filecab) Save_old(record map[string]string) error {
 func (f *Filecab) Save(record map[string]string) error {
     f.mu.Lock()
     defer f.mu.Unlock()
-    
+    return f.saveInternal(record)
+}
+
+func (f *Filecab) saveHistory(record map[string]string) error {
+    // open a file for appending that's record["id"] + "/history.txt"
+    // serialize the record with the existing serializeRecordToBytes function
+    // and append the bytes, followed by 2 new lines
+    filePath := f.RootDir + "/" + record["id"] + "/history.txt"
+    file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+    data := serializeRecordToBytes(record)
+    if _, err := file.Write(data); err != nil {
+        return err
+    }
+    return nil
+}
+var doLog = true
+func (f *Filecab) saveInternal(record map[string]string) error {
     isNew := false
     var originalID = ""
     if strings.HasSuffix(record["id"], "/") {
@@ -161,20 +181,35 @@ func (f *Filecab) Save(record map[string]string) error {
     fullDir := f.RootDir + "/" + record["id"]
     filePath := fullDir + "/" + "record.txt"
     if isNew {
+        // fmt.Println("creating", record["id"], "with", len(record), "fields")
+        timeStr := time.Now().Format(time.RFC3339Nano)
+        record["updated_at"] = timeStr
+        record["created_at"] = timeStr
         var err error
-        
         err = os.MkdirAll(fullDir, os.ModePerm)
         if err != nil {
             return err
         }
         errCh := make(chan error, 10)
         var errChCount = 0
+        errChCount++
+        go func() {
+            errCh <- f.saveHistory(map[string]string{
+                "id": originalID[0:len(originalID)-1],
+                "type": "add",
+                "added_id": record["id"],
+            })
+        }()
         serializedBytes := serializeRecordToBytes(record)
         errChCount++
         go func() {
             errCh <- os.WriteFile(filePath, serializedBytes, 0644)
         }()
-        
+        errChCount++
+        go func() {
+            errCh <- f.saveHistory(record)
+        }()
+
         lastPath := f.RootDir + "/" + originalID + "last"
         _, err = os.Stat(lastPath);
         if os.IsNotExist(err) {
@@ -192,6 +227,11 @@ func (f *Filecab) Save(record map[string]string) error {
             if err != nil {
                 return err
             }
+            // versionPath := f.RootDir + "/" + originalID + "version"
+            // err = os.WriteFile(lengthPath, []byte("1"), 0644)
+            // if err != nil {
+            //     return err
+            // }
         } else if err == nil {
             prevLastDir, err := os.Readlink(lastPath)
             if err != nil {
@@ -238,6 +278,15 @@ func (f *Filecab) Save(record map[string]string) error {
             }
         }
     } else {
+        // fmt.Println("updating", record["id"], "with", len(record), "fields")
+        record["updated_at"] = time.Now().Format(time.RFC3339Nano)
+        
+        errCh := make(chan error, 2)
+        var errChCount = 0
+        errChCount++
+        go func() {
+            errCh <- f.saveHistory(record)
+        }()
         existingData, err := os.ReadFile(filePath)
         if err != nil {
             return err
@@ -250,6 +299,11 @@ func (f *Filecab) Save(record map[string]string) error {
         err = os.WriteFile(filePath, []byte(serializedBytes), 0644)
         if err != nil {
             return err
+        }
+        for i := 0; i < errChCount; i++ {
+            if err := <-errCh; err != nil {
+                return err
+            }
         }
     }
     return nil
