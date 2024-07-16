@@ -5,6 +5,7 @@ import (
     "testing"
     "fmt"
     "log"
+    "strings"
     "strconv"
     "time"
     "context"
@@ -19,7 +20,8 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 1_000
+const maxLoop = 100_000
+const repeat = 1
 // const maxLoop = 10
 
 // TODO: rwlock
@@ -48,22 +50,31 @@ func TestFilecab(t *testing.T) {
             "id": "accounts/",
             "name": "Mr. " + strconv.Itoa(i),
             "birthdate": "2001-01-01",
-            "quote": "I want to succeed\nat everything",
+            "quote": strings.Repeat("I want to succeed\nat everything\n", repeat),
         }
         err = fc.Save(r)
         assert.Nil(t, err)
     }
+
     fmt.Println("writing took", time.Since(start), "_lime")
     
     start = time.Now()
     records, err := fc.Load("accounts")
     assert.Nil(t, err)
     fmt.Println("number of records: ", len(records))
+    fmt.Println("reading took", time.Since(start), "_lime")
+    
+    
+    start = time.Now()
+    records, err = fc.Load3("accounts")
+    assert.Nil(t, err)
+    fmt.Println("number of records: ", len(records))
+    fmt.Println("reading2 took", time.Since(start), "_lime")
+
     // indentJSON, err := json.MarshalIndent(records, "", "  ")
     // assert.Nil(t, err)
     // fmt.Println(string(indentJSON))
     _ = json.Marshal
-    fmt.Println("reading took", time.Since(start), "_lime")
     
     
     start = time.Now()
@@ -129,7 +140,7 @@ func TestSqliteInsertion(t *testing.T) {
         r := []interface{}{
             "Mr. " + strconv.Itoa(i),
             "2001-01-01",
-            "I want to succeed\nat everything",
+            strings.Repeat("I want to succeed\nat everything\n", repeat),
         }
         _, err = stmt.Exec(r...)
         assert.Nil(t, err)
@@ -211,7 +222,7 @@ func TestMongoInsertion(t *testing.T) {
         r := bson.D{
             {"name", "Mr. " + strconv.Itoa(i)},
             {"birthdate", "2001-01-01"},
-            {"quote", "I want to succeed\nat everything"},
+            {"quote",  strings.Repeat("I want to succeed\nat everything\n", repeat)},
         }
         _, err = col.InsertOne(context.TODO(), r)
         assert.Nil(t, err)
