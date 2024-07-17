@@ -151,6 +151,7 @@ func (f *Filecab) Save(record map[string]string) error {
 }
 
 func (f *Filecab) saveHistory(record map[string]string) error {
+    return nil
     // open a file for appending that's record["id"] + "/history.txt"
     // serialize the record with the existing serializeRecordToBytes function
     // and append the bytes, followed by 2 new lines
@@ -168,6 +169,9 @@ func (f *Filecab) saveHistory(record map[string]string) error {
 }
 
 func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
+    // if !doLog {
+    //     return nil
+    // }
     isNew := false
     var originalID = ""
     if strings.HasSuffix(record["id"], "/") {
@@ -210,11 +214,19 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         //         errCh <- f.saveHistory(hr)
         //     }()
         // }
-        serializedBytes := serializeRecordToBytes(record)
-        errChCount++
-        go func() {
-            errCh <- os.WriteFile(filePath, serializedBytes, 0644)
-        }()
+        if record["override_symlink"] == "" {
+            serializedBytes := serializeRecordToBytes(record)
+            errChCount++
+            go func() {
+                errCh <- os.WriteFile(filePath, serializedBytes, 0644)
+            }()
+        } else {
+            errChCount++
+            go func() {
+                // errCh <- os.MkdirAll(fullDir, os.ModePerm)
+                errCh <- os.Symlink(f.RootDir + "/" + record["override_symlink"], filePath)
+            }()
+        }
 
         if doLog {
             errChCount++
@@ -232,15 +244,18 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                 hr["id"] += "/history/"
                 hr["non_history_id"] = theIdBefore
                 errCh <- f.saveInternal(false, hr)
+                historyId := hr["id"]
                 // note that saveInternal updates the id
                 
                 // save up one level only
                 parts := strings.Split(theIdBefore, "/records/")
-                // fmt.Println(strings.Join(parts, "--"))
                 parts = parts[0:len(parts)-1]
+                
+                hr = map[string]string{}
                 hr["id"] = strings.Join(parts, "/records/") + "/history/"
-                // fmt.Println("parent id is", hr["id"], "_coral")
+                hr["override_symlink"] = historyId + "/record.txt"
                 errCh <- f.saveInternal(false, hr)
+                // errCh <- nil
                 
                 hr["id"] = originalID[0:len(originalID)-1]
                 errCh <- f.saveHistory(hr)
@@ -331,6 +346,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             }()
             errChCount += 3
             go func() {
+                // fmt.Println("history for update", "_coral")
                 hr := map[string]string{}
                 for k, v := range record {
                     hr[k] = v
@@ -340,15 +356,19 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                 hr["id"] += "/history/"
                 hr["non_history_id"] = theIdBefore
                 errCh <- f.saveInternal(false, hr)
+                historyId := hr["id"]
                 // note that saveInternal updates the id
                 
                 // save up one level only
                 parts := strings.Split(theIdBefore, "/records/")
-                // fmt.Println(strings.Join(parts, "--"))
                 parts = parts[0:len(parts)-1]
-                hr["id"]  = strings.Join(parts, "/records/") + "/history/"
-                // fmt.Println("parent id is", hr["id"], "_coral")
+                
+                hr = map[string]string{}
+                hr["id"] = strings.Join(parts, "/records/") + "/history/"
+                hr["override_symlink"] = historyId + "/record.txt"
+                // fmt.Println("saving update", hr["id"], "_coral")
                 errCh <- f.saveInternal(false, hr)
+                // errCh <- nil
 
                 hr["id"] = strings.Join(parts, "/records/")
                 errCh <- f.saveHistory(hr)

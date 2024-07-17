@@ -20,7 +20,7 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 1_000
+const maxLoop = 10_000
 // const maxLoop = 10
 const repeat = 1
 const extraFields = 100
@@ -77,12 +77,6 @@ func TestFilecab(t *testing.T) {
     fmt.Println("number of records: ", len(records))
     fmt.Println("reading2 took", time.Since(start), "_lime")
 
-    // indentJSON, err := json.MarshalIndent(records, "", "  ")
-    // assert.Nil(t, err)
-    // fmt.Println(string(indentJSON))
-    _ = json.Marshal
-    
-    
     start = time.Now()
     for i, r := range records {
         updatedR := map[string]string{
@@ -93,6 +87,18 @@ func TestFilecab(t *testing.T) {
         assert.Nil(t, err)
     }
     fmt.Println("updating took", time.Since(start), "_lime")
+    
+    start = time.Now()
+    records, err = fc.Load3("accounts/history")
+    assert.Nil(t, err)
+    fmt.Println("number of records: ", len(records))
+    fmt.Println("reading history took", time.Since(start), "_lime")
+    // indentJSON, err := json.MarshalIndent(records, "", "  ")
+    // assert.Nil(t, err)
+    // fmt.Println(string(indentJSON))
+    _ = json.Marshal
+    
+    
     
 }
 
