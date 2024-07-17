@@ -50,7 +50,8 @@ func (f *Filecab) Save_old(record map[string]string) error {
     if strings.HasSuffix(record["id"], "/") {
         originalID = record["id"]
         now := time.Now()
-        record["id"] += now.Format("2006/01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        // record["id"] += now.Format("2006/01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        record["id"] += now.Format("2006_01_02_15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
         isNew = true
     }
     
@@ -165,6 +166,7 @@ func (f *Filecab) saveHistory(record map[string]string) error {
     }
     return nil
 }
+
 var doLog = true
 func (f *Filecab) saveInternal(record map[string]string) error {
     isNew := false
@@ -172,8 +174,10 @@ func (f *Filecab) saveInternal(record map[string]string) error {
     if strings.HasSuffix(record["id"], "/") {
         originalID = record["id"]
         now := time.Now()
-        record["id"] += now.Format("2006/01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        record["id"] += "records/" + now.Format("2006/01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
         // record["id"] += fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        // record["id"] += now.Format("2006_01_02_15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        // record["id"] += now.Format("records/") + strconv.Atoi(time.Now().UnixNano() / int64(time.Millisecond)) + "_" + generateUniqueID() + "_" + nameize(record["name"])
         isNew = true
     }
     

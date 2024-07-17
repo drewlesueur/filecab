@@ -20,7 +20,7 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 10_000
+const maxLoop = 1_000
 // const maxLoop = 10
 const repeat = 1
 const extraFields = 100
@@ -258,24 +258,6 @@ func TestMongoInsertion(t *testing.T) {
         accounts = append(accounts, account)
     }
     fmt.Println("mongo read took", time.Since(start), "_saddlebrown")
-    
-    start = time.Now()
-    cursor, err = col.Find(context.TODO(), bson.D{})
-    assert.Nil(t, err)
-    defer cursor.Close(context.TODO())
-    accounts = nil
-    for cursor.Next(context.TODO()) {
-        var result bson.M
-        err := cursor.Decode(&result)
-        assert.Nil(t, err)
-        account := make(map[string]string)
-        for k, v := range result {
-            account[k] = fmt.Sprintf("%v", v)
-        }
-        accounts = append(accounts, account)
-    }
-    fmt.Println("mongo read2 took", time.Since(start), "_saddlebrown")
-
 
     start = time.Now()
     for i, account := range accounts {
