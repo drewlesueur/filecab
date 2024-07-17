@@ -147,7 +147,7 @@ func (f *Filecab) Save_old(record map[string]string) error {
 func (f *Filecab) Save(record map[string]string) error {
     f.mu.Lock()
     defer f.mu.Unlock()
-    return f.saveInternal(record)
+    return f.saveInternal(true, record)
 }
 
 func (f *Filecab) saveHistory(record map[string]string) error {
@@ -167,8 +167,7 @@ func (f *Filecab) saveHistory(record map[string]string) error {
     return nil
 }
 
-var doLog = true
-func (f *Filecab) saveInternal(record map[string]string) error {
+func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     isNew := false
     var originalID = ""
     if strings.HasSuffix(record["id"], "/") {
@@ -187,32 +186,66 @@ func (f *Filecab) saveInternal(record map[string]string) error {
     if isNew {
         // fmt.Println("creating", record["id"], "with", len(record), "fields")
         timeStr := time.Now().Format(time.RFC3339Nano)
-        record["updated_at"] = timeStr
-        record["created_at"] = timeStr
+        if doLog {
+            record["updated_at"] = timeStr
+            record["created_at"] = timeStr
+        }
         var err error
         err = os.MkdirAll(fullDir, os.ModePerm)
         if err != nil {
             return err
         }
-        errCh := make(chan error, 10)
+        errCh := make(chan error, 12)
         var errChCount = 0
-        errChCount++
-        go func() {
-            errCh <- f.saveHistory(map[string]string{
-                "id": originalID[0:len(originalID)-1],
-                "type": "add",
-                "added_id": record["id"],
-            })
-        }()
+        
+        // if doLog {
+        //     hr := map[string]string{
+        //         "id": originalID[0:len(originalID)-1],
+        //         // "id": originalID,
+        //         "type": "add",
+        //         "added_id": record["id"],
+        //     }
+        //     errChCount++
+        //     go func() {
+        //         errCh <- f.saveHistory(hr)
+        //     }()
+        // }
         serializedBytes := serializeRecordToBytes(record)
         errChCount++
         go func() {
             errCh <- os.WriteFile(filePath, serializedBytes, 0644)
         }()
-        errChCount++
-        go func() {
-            errCh <- f.saveHistory(record)
-        }()
+
+        if doLog {
+            errChCount++
+            go func() {
+                errCh <- f.saveHistory(record)
+            }()
+            errChCount += 3
+            go func() {
+                hr := map[string]string{}
+                for k, v := range record {
+                    hr[k] = v
+                }
+
+                theIdBefore := hr["id"]
+                hr["id"] += "/history/"
+                hr["non_history_id"] = theIdBefore
+                errCh <- f.saveInternal(false, hr)
+                // note that saveInternal updates the id
+                
+                // save up one level only
+                parts := strings.Split(theIdBefore, "/records/")
+                // fmt.Println(strings.Join(parts, "--"))
+                parts = parts[0:len(parts)-1]
+                hr["id"] = strings.Join(parts, "/records/") + "/history/"
+                // fmt.Println("parent id is", hr["id"], "_coral")
+                errCh <- f.saveInternal(false, hr)
+                
+                hr["id"] = originalID[0:len(originalID)-1]
+                errCh <- f.saveHistory(hr)
+            }()
+        }
 
         lastPath := f.RootDir + "/" + originalID + "last"
         _, err = os.Stat(lastPath);
@@ -282,15 +315,45 @@ func (f *Filecab) saveInternal(record map[string]string) error {
             }
         }
     } else {
+        // update:
+
         // fmt.Println("updating", record["id"], "with", len(record), "fields")
-        record["updated_at"] = time.Now().Format(time.RFC3339Nano)
+        if doLog {
+            record["updated_at"] = time.Now().Format(time.RFC3339Nano)
+        }
         
         errCh := make(chan error, 2)
         var errChCount = 0
-        errChCount++
-        go func() {
-            errCh <- f.saveHistory(record)
-        }()
+        if doLog {
+            errChCount++
+            go func() {
+                errCh <- f.saveHistory(record)
+            }()
+            errChCount += 3
+            go func() {
+                hr := map[string]string{}
+                for k, v := range record {
+                    hr[k] = v
+                }
+
+                theIdBefore := hr["id"]
+                hr["id"] += "/history/"
+                hr["non_history_id"] = theIdBefore
+                errCh <- f.saveInternal(false, hr)
+                // note that saveInternal updates the id
+                
+                // save up one level only
+                parts := strings.Split(theIdBefore, "/records/")
+                // fmt.Println(strings.Join(parts, "--"))
+                parts = parts[0:len(parts)-1]
+                hr["id"]  = strings.Join(parts, "/records/") + "/history/"
+                // fmt.Println("parent id is", hr["id"], "_coral")
+                errCh <- f.saveInternal(false, hr)
+
+                hr["id"] = strings.Join(parts, "/records/")
+                errCh <- f.saveHistory(hr)
+            }()
+        }
         existingData, err := os.ReadFile(filePath)
         if err != nil {
             return err
