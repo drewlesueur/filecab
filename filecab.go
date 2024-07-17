@@ -8,12 +8,14 @@ import (
     "sort"
     "time"
     "fmt"
+    "io"
     "math/rand"
     "encoding/hex"
     "regexp"
     "os"
     "bytes"
     "path/filepath"
+	"compress/gzip"
 )
 
 
@@ -698,7 +700,32 @@ func serializeRecordToBytes(obj map[string]string) []byte {
         }
     }
     buffer.WriteString("\n\n")
-    return []byte(buffer.String())
+    if false {
+        return gzipBytes([]byte(buffer.String()))
+    } else {
+        return []byte(buffer.String())
+    }
+}
+
+func gzipBytes(data []byte) []byte {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	gz.Write(data)
+	gz.Close()
+	return buf.Bytes()
+}
+func ungzipBytes(data []byte) ([]byte, error) {
+	buf := bytes.NewBuffer(data)
+	gz, err := gzip.NewReader(buf)
+	if err != nil {
+		return nil, err
+	}
+	defer gz.Close()
+	result, err := io.ReadAll(gz)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 
@@ -735,6 +762,7 @@ func deserializeRecord(data string) map[string]string {
 // but take a []byte instead of a string
 func deserializeRecordBytes(data []byte) map[string]string {
     result := make(map[string]string)
+    // data, _ = ungzipBytes(data)
     lines := bytes.Split(data, []byte("\n"))
     var currentKey string
     var currentValue []byte
