@@ -151,7 +151,7 @@ func (f *Filecab) Save(record map[string]string) error {
 }
 
 func (f *Filecab) saveHistory(record map[string]string) error {
-    return nil
+    // return nil
     // open a file for appending that's record["id"] + "/history.txt"
     // serialize the record with the existing serializeRecordToBytes function
     // and append the bytes, followed by 2 new lines
@@ -178,9 +178,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         originalID = record["id"]
         now := time.Now()
         record["id"] += "records/" + now.Format("2006/01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
-        // record["id"] += fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
-        // record["id"] += now.Format("2006_01_02_15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
-        // record["id"] += now.Format("records/") + strconv.Atoi(time.Now().UnixNano() / int64(time.Millisecond)) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        // record["id"] += "records/" + generateUniqueID() + "_" + nameize(record["name"])
         isNew = true
     }
     
@@ -202,18 +200,6 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         errCh := make(chan error, 12)
         var errChCount = 0
         
-        // if doLog {
-        //     hr := map[string]string{
-        //         "id": originalID[0:len(originalID)-1],
-        //         // "id": originalID,
-        //         "type": "add",
-        //         "added_id": record["id"],
-        //     }
-        //     errChCount++
-        //     go func() {
-        //         errCh <- f.saveHistory(hr)
-        //     }()
-        // }
         if record["override_symlink"] == "" {
             serializedBytes := serializeRecordToBytes(record)
             errChCount++
@@ -233,33 +219,35 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             go func() {
                 errCh <- f.saveHistory(record)
             }()
-            errChCount += 3
-            go func() {
-                hr := map[string]string{}
-                for k, v := range record {
-                    hr[k] = v
-                }
+            if false {
+                errChCount += 3
+                go func() {
+                    hr := map[string]string{}
+                    for k, v := range record {
+                        hr[k] = v
+                    }
 
-                theIdBefore := hr["id"]
-                hr["id"] += "/history/"
-                hr["non_history_id"] = theIdBefore
-                errCh <- f.saveInternal(false, hr)
-                historyId := hr["id"]
-                // note that saveInternal updates the id
-                
-                // save up one level only
-                parts := strings.Split(theIdBefore, "/records/")
-                parts = parts[0:len(parts)-1]
-                
-                hr = map[string]string{}
-                hr["id"] = strings.Join(parts, "/records/") + "/history/"
-                hr["override_symlink"] = historyId + "/record.txt"
-                errCh <- f.saveInternal(false, hr)
-                // errCh <- nil
-                
-                hr["id"] = originalID[0:len(originalID)-1]
-                errCh <- f.saveHistory(hr)
-            }()
+                    theIdBefore := hr["id"]
+                    hr["id"] += "/history/"
+                    hr["non_history_id"] = theIdBefore
+                    errCh <- f.saveInternal(false, hr)
+                    historyId := hr["id"]
+                    // note that saveInternal updates the id
+
+                    // save up one level only
+                    parts := strings.Split(theIdBefore, "/records/")
+                    parts = parts[0:len(parts)-1]
+
+                    hr = map[string]string{}
+                    hr["id"] = strings.Join(parts, "/records/") + "/history/"
+                    hr["override_symlink"] = historyId + "record.txt"
+                    errCh <- f.saveInternal(false, hr)
+                    // errCh <- nil
+
+                    hr["id"] = originalID[0:len(originalID)-1]
+                    errCh <- f.saveHistory(hr)
+                }()
+            }
         }
 
         lastPath := f.RootDir + "/" + originalID + "last"
@@ -274,11 +262,11 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             if err != nil {
                 return err
             }
-            lengthPath := f.RootDir + "/" + originalID + "length"
-            err = os.WriteFile(lengthPath, []byte("1"), 0644)
-            if err != nil {
-                return err
-            }
+            // lengthPath := f.RootDir + "/" + originalID + "length"
+            // err = os.WriteFile(lengthPath, []byte("1"), 0644)
+            // if err != nil {
+            //     return err
+            // }
             // versionPath := f.RootDir + "/" + originalID + "version"
             // err = os.WriteFile(lengthPath, []byte("1"), 0644)
             // if err != nil {
@@ -344,35 +332,37 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             go func() {
                 errCh <- f.saveHistory(record)
             }()
-            errChCount += 3
-            go func() {
-                // fmt.Println("history for update", "_coral")
-                hr := map[string]string{}
-                for k, v := range record {
-                    hr[k] = v
-                }
+            if false {
+                errChCount += 3
+                go func() {
+                    // fmt.Println("history for update", "_coral")
+                    hr := map[string]string{}
+                    for k, v := range record {
+                        hr[k] = v
+                    }
 
-                theIdBefore := hr["id"]
-                hr["id"] += "/history/"
-                hr["non_history_id"] = theIdBefore
-                errCh <- f.saveInternal(false, hr)
-                historyId := hr["id"]
-                // note that saveInternal updates the id
-                
-                // save up one level only
-                parts := strings.Split(theIdBefore, "/records/")
-                parts = parts[0:len(parts)-1]
-                
-                hr = map[string]string{}
-                hr["id"] = strings.Join(parts, "/records/") + "/history/"
-                hr["override_symlink"] = historyId + "/record.txt"
-                // fmt.Println("saving update", hr["id"], "_coral")
-                errCh <- f.saveInternal(false, hr)
-                // errCh <- nil
+                    theIdBefore := hr["id"]
+                    hr["id"] += "/history/"
+                    hr["non_history_id"] = theIdBefore
+                    errCh <- f.saveInternal(false, hr)
+                    historyId := hr["id"]
+                    // note that saveInternal updates the id
 
-                hr["id"] = strings.Join(parts, "/records/")
-                errCh <- f.saveHistory(hr)
-            }()
+                    // save up one level only
+                    parts := strings.Split(theIdBefore, "/records/")
+                    parts = parts[0:len(parts)-1]
+
+                    hr = map[string]string{}
+                    hr["id"] = strings.Join(parts, "/records/") + "/history/"
+                    hr["override_symlink"] = historyId + "record.txt"
+                    // fmt.Println("saving update", hr["id"], "_coral")
+                    errCh <- f.saveInternal(false, hr)
+                    // errCh <- nil
+
+                    hr["id"] = strings.Join(parts, "/records/")
+                    errCh <- f.saveHistory(hr)
+                }()
+            }
         }
         existingData, err := os.ReadFile(filePath)
         if err != nil {
@@ -768,7 +758,15 @@ func deserializeRecordBytes(data []byte) map[string]string {
 }
 
 
+
+
+var counter int
 func generateUniqueID() string {
+    counter++
+    return strconv.Itoa(counter)
+}
+
+func generateUniqueID_old() string {
 	randomBytes := make([]byte, 8)
 	_, err := rand.Read(randomBytes)
 	if err != nil {
@@ -776,4 +774,36 @@ func generateUniqueID() string {
 	}
 	randomPart := hex.EncodeToString(randomBytes)
 	return randomPart
+}
+
+
+// golang function to read a file in chuncks backwards up to a specific byte offset
+func readFileInChunksBackwards(filePath string, offset int64, chunkSize int64) ([]byte, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	var result []byte
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	fileSize := fileInfo.Size()
+	readOffset := fileSize
+	if offset < fileSize {
+		readOffset = offset
+	}
+	for readOffset > 0 {
+		chunkStart := readOffset - chunkSize
+		if chunkStart < 0 {
+			chunkStart = 0
+		}
+		chunk := make([]byte, readOffset-chunkStart)
+		file.Seek(chunkStart, 0)
+		file.Read(chunk)
+		result = append(chunk, result...) // Prepend to maintain order
+		readOffset = chunkStart
+	}
+	return result, nil
 }
