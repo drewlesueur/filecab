@@ -161,7 +161,7 @@ func (f *Filecab) saveHistory(level int, record map[string]string) error {
     parts := strings.Split(record["id"], "/records/")
     parts = parts[0:len(parts)-level]
     usedId := strings.Join(parts, "/records/")
-    fmt.Println(level, "used:", usedId, "orig:", record["id"])
+    // fmt.Println(level, "used:", usedId, "orig:", record["id"])
     
     // return nil
     filePath := f.RootDir + "/" + usedId + "/history.txt"
@@ -176,6 +176,9 @@ func (f *Filecab) saveHistory(level int, record map[string]string) error {
     }
     return nil
 }
+
+// const singleFileHistory = true
+const singleFileHistory = false
 
 func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     // if !doLog {
@@ -224,16 +227,17 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         }
 
         if doLog {
-            errChCount++
-            go func() {
-                errCh <- f.saveHistory(0, record)
-            }()
-            errChCount++
-            go func() {
-                errCh <- f.saveHistory(1, record)
-            }()
-            if false {
-                errChCount += 3
+            if singleFileHistory {
+                errChCount++
+                go func() {
+                    errCh <- f.saveHistory(0, record)
+                }()
+                errChCount++
+                go func() {
+                    errCh <- f.saveHistory(1, record)
+                }()
+            } else {
+                errChCount += 2
                 go func() {
                     hr := map[string]string{}
                     for k, v := range record {
@@ -253,12 +257,9 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
 
                     hr = map[string]string{}
                     hr["id"] = strings.Join(parts, "/records/") + "/history/"
-                    hr["override_symlink"] = historyId + "record.txt"
+                    hr["override_symlink"] = historyId + "/record.txt"
                     errCh <- f.saveInternal(false, hr)
                     // errCh <- nil
-
-                    // hr["id"] = originalID[0:len(originalID)-1]
-                    // errCh <- f.saveHistory(hr)
                 }()
             }
         }
@@ -341,17 +342,17 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         errCh := make(chan error, 2)
         var errChCount = 0
         if doLog {
-            
-            errChCount++
-            go func() {
-                errCh <- f.saveHistory(0, record)
-            }()
-            errChCount++
-            go func() {
-                errCh <- f.saveHistory(1, record)
-            }()
-            if false {
-                errChCount += 3
+            if singleFileHistory {
+                errChCount++
+                go func() {
+                    errCh <- f.saveHistory(0, record)
+                }()
+                errChCount++
+                go func() {
+                    errCh <- f.saveHistory(1, record)
+                }()
+            } else {
+                errChCount += 2
                 go func() {
                     // fmt.Println("history for update", "_coral")
                     hr := map[string]string{}
@@ -372,13 +373,10 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
 
                     hr = map[string]string{}
                     hr["id"] = strings.Join(parts, "/records/") + "/history/"
-                    hr["override_symlink"] = historyId + "record.txt"
+                    hr["override_symlink"] = historyId + "/record.txt"
                     // fmt.Println("saving update", hr["id"], "_coral")
                     errCh <- f.saveInternal(false, hr)
                     // errCh <- nil
-
-                    // hr["id"] = strings.Join(parts, "/records/")
-                    // errCh <- f.saveHistory(hr)
                 }()
             }
         }
