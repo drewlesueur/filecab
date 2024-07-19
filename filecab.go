@@ -45,7 +45,7 @@ func (f *Filecab) Save(record map[string]string) error {
     return f.saveInternal(true, record)
 }
 
-func (f *Filecab) saveHistory(level int, record map[string]string) error {
+func (f *Filecab) saveHistory(level int, record map[string]string, serializedBytes []byte) error {
     // if level != 0 {
     //     return nil
     // }
@@ -66,8 +66,7 @@ func (f *Filecab) saveHistory(level int, record map[string]string) error {
         return err
     }
     defer file.Close()
-    data := serializeRecordToBytes(record) // TODO: reuse serialized
-    if _, err := file.Write(data); err != nil {
+    if _, err := file.Write(serializedBytes); err != nil {
         return err
     }
     return nil
@@ -96,6 +95,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     record["id"] = strings.ReplaceAll(record["id"], "..", "")
     fullDir := f.RootDir + "/" + record["id"]
     filePath := fullDir + "/" + "record.txt"
+    serializedBytes := serializeRecordToBytes(record)
     
     if isNew {
         // fmt.Println("creating", record["id"], "with", len(record), "fields")
@@ -113,7 +113,6 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         var errChCount = 0
         
         if record["override_symlink"] == "" {
-            serializedBytes := serializeRecordToBytes(record)
             errChCount++
             go func() {
                 errCh <- os.WriteFile(filePath, serializedBytes, 0644)
@@ -132,11 +131,11 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             if singleFileHistory {
                 errChCount++
                 go func() {
-                    errCh <- f.saveHistory(0, record)
+                    errCh <- f.saveHistory(0, record, serializedBytes)
                 }()
                 errChCount++
                 go func() {
-                    errCh <- f.saveHistory(1, record)
+                    errCh <- f.saveHistory(1, record, serializedBytes)
                 }()
             } else {
                 errChCount += 2
@@ -252,11 +251,11 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             if singleFileHistory {
                 errChCount++
                 go func() {
-                    errCh <- f.saveHistory(0, record)
+                    errCh <- f.saveHistory(0, record, serializedBytes)
                 }()
                 errChCount++
                 go func() {
-                    errCh <- f.saveHistory(1, record)
+                    errCh <- f.saveHistory(1, record, serializedBytes)
                 }()
             } else {
                 errChCount += 2
