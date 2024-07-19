@@ -152,18 +152,25 @@ func (f *Filecab) Save(record map[string]string) error {
     return f.saveInternal(true, record)
 }
 
-func (f *Filecab) saveHistory(record map[string]string) error {
+func (f *Filecab) saveHistory(level int, record map[string]string) error {
     // return nil
     // open a file for appending that's record["id"] + "/history.txt"
     // serialize the record with the existing serializeRecordToBytes function
     // and append the bytes, followed by 2 new lines
-    filePath := f.RootDir + "/" + record["id"] + "/history.txt"
+    
+    parts := strings.Split(record["id"], "/records/")
+    parts = parts[0:len(parts)-level]
+    usedId := strings.Join(parts, "/records/")
+    fmt.Println(level, "used:", usedId, "orig:", record["id"])
+    
+    // return nil
+    filePath := f.RootDir + "/" + usedId + "/history.txt"
     file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
     if err != nil {
         return err
     }
     defer file.Close()
-    data := serializeRecordToBytes(record)
+    data := serializeRecordToBytes(record) // TODO: reuse serialized
     if _, err := file.Write(data); err != nil {
         return err
     }
@@ -219,7 +226,11 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         if doLog {
             errChCount++
             go func() {
-                errCh <- f.saveHistory(record)
+                errCh <- f.saveHistory(0, record)
+            }()
+            errChCount++
+            go func() {
+                errCh <- f.saveHistory(1, record)
             }()
             if false {
                 errChCount += 3
@@ -246,8 +257,8 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     errCh <- f.saveInternal(false, hr)
                     // errCh <- nil
 
-                    hr["id"] = originalID[0:len(originalID)-1]
-                    errCh <- f.saveHistory(hr)
+                    // hr["id"] = originalID[0:len(originalID)-1]
+                    // errCh <- f.saveHistory(hr)
                 }()
             }
         }
@@ -330,9 +341,14 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         errCh := make(chan error, 2)
         var errChCount = 0
         if doLog {
+            
             errChCount++
             go func() {
-                errCh <- f.saveHistory(record)
+                errCh <- f.saveHistory(0, record)
+            }()
+            errChCount++
+            go func() {
+                errCh <- f.saveHistory(1, record)
             }()
             if false {
                 errChCount += 3
@@ -361,8 +377,8 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     errCh <- f.saveInternal(false, hr)
                     // errCh <- nil
 
-                    hr["id"] = strings.Join(parts, "/records/")
-                    errCh <- f.saveHistory(hr)
+                    // hr["id"] = strings.Join(parts, "/records/")
+                    // errCh <- f.saveHistory(hr)
                 }()
             }
         }

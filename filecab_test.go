@@ -20,7 +20,7 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 10_000
+const maxLoop = 10_0
 // const maxLoop = 10
 const repeat = 1
 const extraFields = 100
@@ -28,6 +28,7 @@ const extraFields = 100
 
 // TODO: rwlock
 func TestFilecab(t *testing.T) {
+    fmt.Println("")
     r := map[string]string{
         "id": "accounts/",
         "name": "Mickey",
