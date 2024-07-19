@@ -20,7 +20,7 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 10_00
+const maxLoop = 10_000
 // const maxLoop = 10
 const repeat = 1
 const extraFields = 100

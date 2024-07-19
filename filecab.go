@@ -46,6 +46,9 @@ func (f *Filecab) Save(record map[string]string) error {
 }
 
 func (f *Filecab) saveHistory(level int, record map[string]string) error {
+    // if level != 0 {
+    //     return nil
+    // }
     // return nil
     // open a file for appending that's record["id"] + "/history.txt"
     // serialize the record with the existing serializeRecordToBytes function
@@ -70,12 +73,12 @@ func (f *Filecab) saveHistory(level int, record map[string]string) error {
     return nil
 }
 
-// const singleFileHistory = true
-const singleFileHistory = false
+const singleFileHistory = true
+// const singleFileHistory = false
 
 
-// const recordsName = "rcrds"
-const recordsName = "these_are_the_records"
+const recordsName = "records"
+// const recordsName = "records"
 func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     // if !doLog {
     //     return nil
@@ -470,7 +473,7 @@ func init() {
 }
 func nameize(s string) string {
     if s == "" {
-        s = "record"
+        s = "r"
     }
 	processed := nameRE.ReplaceAllString(s, "_")
 	if len(processed) > 32 {
