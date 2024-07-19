@@ -119,7 +119,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             errChCount++
             go func() {
                 // errCh <- os.MkdirAll(fullDir, os.ModePerm)
-                errCh <- os.Symlink(f.RootDir + "/" + record["override_symlink"], filePath)
+                errCh <- os.Symlink(record["override_symlink"], filePath)
                 // Todo: make relative
                 // errCh <- os.Symlink("./" + record["override_symlink"], filePath)
             }()
@@ -156,7 +156,8 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
 
                     hr = map[string]string{}
                     hr["id"] = strings.Join(parts, "/"+recordsName+"/") + "/history/"
-                    hr["override_symlink"] = historyId + "/record.txt"
+                    // hr["override_symlink"] = historyId + "/record.txt"
+                    hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, originalID) + "/record.txt"
                     errCh <- f.saveInternal(false, hr)
                     // errCh <- nil
                 }()
@@ -189,7 +190,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             // }
         } else if err == nil {
             prevLastDir, err := os.Readlink(lastPath)
-            fmt.Println("reading link:", prevLastDir)
+            // fmt.Println("reading link:", prevLastDir)
             if err != nil {
                 return err
             }
@@ -197,7 +198,6 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             errChCount++
             go func() {
                 nextPath := f.RootDir + "/" + originalID + prevLastDir[2:] + "/next"
-                fmt.Println("next is saving to", nextPath)
                 errCh <- os.Symlink("../../../" + strings.TrimPrefix(record["id"], originalID), nextPath)
                 // errCh <- os.Symlink(fullDir, nextPath)
             }()
@@ -277,8 +277,10 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
 
                     hr = map[string]string{}
                     hr["id"] = strings.Join(parts, "/"+recordsName+"/") + "/history/"
-                    hr["override_symlink"] = historyId + "/record.txt"
-                    // fmt.Println("saving update", hr["id"], "_coral")
+                    // hr["override_symlink"] = historyId + "/record.txt"
+                    // hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, originalID) + "/record.txt"
+                    hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, strings.Join(parts, "/"+recordsName+"/") + "/") + "/record.txt"
+                    // fmt.Println("saving update", hr["override_symlink"], "_coral")
                     errCh <- f.saveInternal(false, hr)
                     // errCh <- nil
                 }()
@@ -363,6 +365,7 @@ func (f *Filecab) Load3(thePath string) ([]map[string]string, error) {
     defer f.mu.RUnlock()
     var paths []string
     recordDir := f.RootDir + "/" + thePath + "/first"
+    fmt.Println(recordDir, "_dodgerblue")
     for {
         paths = append(paths, recordDir)
         nextLink := recordDir + "/next"
@@ -375,9 +378,12 @@ func (f *Filecab) Load3(thePath string) ([]map[string]string, error) {
             if err != nil {
                 return nil, err
             }
-            recordDir = nextPath
+            // recordDir = nextPath
+            recordDir = f.RootDir + "/" + thePath + "/" + nextPath[9:]
+            // fmt.Println()
         }
     }
+    
     var maxConcurrency = 100
     var ch = make(chan int, maxConcurrency)
     var records = make([]map[string]string, len(paths))
