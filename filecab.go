@@ -50,14 +50,14 @@ func (f *Filecab) saveHistory(level int, record map[string]string, serializedByt
     //     return nil
     // }
     // return nil
-    // open a file for appending that's record["id"] + "/history.txt"
-    // serialize the record with the existing serializeRecordToBytes function
-    // and append the bytes, followed by 2 new lines
+        // open a file for appending that's record["id"] + "/history.txt"
+        // serialize the record with the existing serializeRecordToBytes function
+        // and append the bytes, followed by 2 new lines
     
-    parts := strings.Split(record["id"], "/"+recordsName+"/")
-    parts = parts[0:len(parts)-level]
-    usedId := strings.Join(parts, "/"+recordsName+"/")
-    // fmt.Println(level, "used:", usedId, "orig:", record["id"])
+        parts := strings.Split(record["id"], "/"+recordsName+"/")
+        parts = parts[0:len(parts)-level]
+        usedId := strings.Join(parts, "/"+recordsName+"/")
+        // fmt.Println(level, "used:", usedId, "orig:", record["id"])
     
     // return nil
     filePath := f.RootDir + "/" + usedId + "/history.txt"
@@ -67,6 +67,25 @@ func (f *Filecab) saveHistory(level int, record map[string]string, serializedByt
     }
     defer file.Close()
     if _, err := file.Write(serializedBytes); err != nil {
+        return err
+    }
+    return nil
+}
+
+func (f *Filecab) saveOrder(record map[string]string) error {
+    // return nil
+    parts := strings.Split(record["id"], "/"+recordsName+"/")
+    parentDir := strings.Join(parts[0:len(parts)-1], "/"+recordsName+"/")
+    localRecordId := parts[len(parts) - 1]
+    
+    
+    filePath := f.RootDir + "/" + parentDir + "/order.txt"
+    file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+    if _, err := file.Write([]byte(localRecordId + "\n")); err != nil {
         return err
     }
     return nil
@@ -87,7 +106,8 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     if strings.HasSuffix(record["id"], "/") {
         originalID = record["id"]
         now := time.Now()
-        record["id"] += recordsName + "/" + now.Format("2006_01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        localRecordId := now.Format("2006_01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        record["id"] += recordsName + "/" + localRecordId
         // record["id"] += recordsName + "/" + generateUniqueID() + "_" + nameize(record["name"])
         isNew = true
     }
@@ -122,10 +142,12 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             go func() {
                 // errCh <- os.MkdirAll(fullDir, os.ModePerm)
                 errCh <- os.Symlink(record["override_symlink"], filePath)
-                // Todo: make relative
-                // errCh <- os.Symlink("./" + record["override_symlink"], filePath)
             }()
         }
+        errChCount++
+        go func() {
+            errCh <- f.saveOrder(record)
+        }()
 
         if doLog {
             if singleFileHistory {
@@ -151,7 +173,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     errCh <- f.saveInternal(false, hr)
                     historyId := hr["id"]
                     // note that saveInternal updates the id
-
+                    // some of the processing could be improved by using localRecordId instead of trimming, splitting?
                     // save up one level only
                     parts := strings.Split(theIdBefore, "/"+recordsName+"/")
                     parts = parts[0:len(parts)-1]
@@ -273,6 +295,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     historyId := hr["id"]
                     // note that saveInternal updates the id
 
+                    // some of the processing could be improved by using localRecordId instead of trimming, splitting?
                     // save up one level only
                     parts := strings.Split(theIdBefore, "/"+recordsName+"/")
                     parts = parts[0:len(parts)-1]
@@ -367,7 +390,6 @@ func (f *Filecab) Load3(thePath string) ([]map[string]string, error) {
     defer f.mu.RUnlock()
     var paths []string
     recordDir := f.RootDir + "/" + thePath + "/first"
-    fmt.Println(recordDir, "_dodgerblue")
     for {
         paths = append(paths, recordDir)
         nextLink := recordDir + "/next"
@@ -400,6 +422,50 @@ func (f *Filecab) Load3(thePath string) ([]map[string]string, error) {
             recordFile := path + "/record.txt"
             data, err := os.ReadFile(recordFile)
             if err != nil {
+                errCh <- err
+                return
+            }
+            record := deserializeRecordBytes(data)
+            records[i] = record
+        }(path)
+    }
+    for i := 0; i < maxConcurrency; i++ {
+        ch <- 1
+    }
+    close(errCh)
+    if len(errCh) > 0 {
+        return nil, <-errCh
+    }
+    return records, nil
+}
+func (f *Filecab) Load4(thePath string) ([]map[string]string, error) {
+    f.mu.RLock()
+    defer f.mu.RUnlock()
+    // fixed size local ids
+    orderPath := f.RootDir + "/" + thePath + "/order.txt"
+    data, err := os.ReadFile(orderPath)
+    if err != nil {
+        return nil, err
+    }
+    paths := strings.Split(string(data), "\n")
+    paths = paths[0:len(paths) - 1] // trailing newline
+    
+    var maxConcurrency = 100
+    var ch = make(chan int, maxConcurrency)
+    var records = make([]map[string]string, len(paths))
+    errCh := make(chan error, len(paths))
+    for i, path := range paths {
+        path := f.RootDir + "/" + thePath  + "/" + recordsName + "/" + path
+        i := i
+        ch <- 1
+        go func(path string) {
+            defer func() {
+                <- ch
+            }()
+            recordFile := path + "/record.txt"
+            data, err := os.ReadFile(recordFile)
+            if err != nil {
+                panic(err)
                 errCh <- err
                 return
             }
@@ -470,15 +536,20 @@ func init() {
     _ = strconv.Itoa
 	nameRE = regexp.MustCompile(`[^a-zA-Z0-9]`)
 }
+
 func nameize(s string) string {
     if s == "" {
         s = "r"
     }
-	processed := nameRE.ReplaceAllString(s, "_")
-	if len(processed) > 32 {
-		processed = processed[:32]
-	}
-	return strings.ToLower(processed)
+    processed := nameRE.ReplaceAllString(s, "_")
+    if len(processed) > 32 {
+        processed = processed[:32]
+    }
+    processed = strings.ToLower(processed)
+    if len(processed) < 32 {
+        processed = processed + strings.Repeat("_", 32-len(processed)) 
+    }
+    return processed
 }
 
 
@@ -631,11 +702,20 @@ func deserializeRecordBytes(data []byte) map[string]string {
 
 
 
+// var counter int
+// func generateUniqueID() string {
+//     counter++
+//     return strconv.Itoa(counter)
+// }
+// 0 pad this to 9 digits
+
 var counter int
 func generateUniqueID() string {
     counter++
-    return strconv.Itoa(counter)
+    return fmt.Sprintf("%09d", counter)
 }
+
+
 
 func generateUniqueID_old() string {
 	randomBytes := make([]byte, 8)

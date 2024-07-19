@@ -76,7 +76,13 @@ func TestFilecab(t *testing.T) {
     records, err := fc.Load3("accounts")
     assert.Nil(t, err)
     fmt.Println("number of records: ", len(records))
-    fmt.Println("reading2 took", time.Since(start), "_lime")
+    fmt.Println("reading3 took", time.Since(start), "_lime")
+
+    start = time.Now()
+    records, err = fc.Load4("accounts")
+    assert.Nil(t, err)
+    fmt.Println("number of records: ", len(records))
+    fmt.Println("reading4 took", time.Since(start), "_lime")
 
     start = time.Now()
     for i, r := range records {
