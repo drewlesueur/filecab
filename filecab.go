@@ -36,113 +36,6 @@ type Filecab struct {
     RootDir string
     // cachedDir map[string]bool
 }
-// 2024/07_14
-
-// TODO: add log implementedemented as regular flow
-// log in another directory for grepping purposes
-
-
-// special fields
-func (f *Filecab) Save_old(record map[string]string) error {
-    f.mu.Lock()
-    defer f.mu.Unlock()
-    
-    isNew := false
-    var originalID = ""
-    if strings.HasSuffix(record["id"], "/") {
-        originalID = record["id"]
-        now := time.Now()
-        // record["id"] += now.Format("2006/01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
-        record["id"] += now.Format("2006_01_02_15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
-        isNew = true
-    }
-    
-    record["id"] = strings.ReplaceAll(record["id"], "..", "")
-    fullDir := f.RootDir + "/" + record["id"]
-    filePath := fullDir + "/" + "record.txt"
-    if isNew {
-        err := os.MkdirAll(fullDir, os.ModePerm)
-        if err != nil {
-            return err
-        }
-
-
-        serializedBytes := serializeRecordToBytes(record)
-        err = os.WriteFile(filePath, serializedBytes, 0644)
-        if err != nil {
-            return err
-        }
-        
-        lastPath := f.RootDir + "/" + originalID + "last"
-        _, err = os.Stat(lastPath);
-        if os.IsNotExist(err) {
-            // fmt.Println(record["name"] + " made a new last")
-            err = os.Symlink(fullDir, lastPath)
-            if err != nil {
-                return err
-            }
-            firstPath := f.RootDir + "/" + originalID + "first"
-            err = os.Symlink(fullDir, firstPath)
-            if err != nil {
-                return err
-            }
-            lengthPath := f.RootDir + "/" + originalID + "length"
-            err = os.WriteFile(lengthPath, []byte("1"), 0644)
-            if err != nil {
-                return err
-            }
-        } else if err == nil {
-            if true {
-                nextPath := f.RootDir + "/" + originalID + "last/next"
-                // Attempt to create the first symlink
-                if err := os.Symlink(fullDir, nextPath); err != nil {
-                    return err
-                }
-                // Attempt to remove the existing 'last' symlink
-                if err := os.Remove(lastPath); err != nil && !os.IsNotExist(err) {
-                    return err
-                }
-                // Attempt to create the new 'last' symlink
-                if err := os.Symlink(fullDir, lastPath); err != nil {
-                    return err
-                }
-
-                // lengthPath := f.RootDir + "/" + originalID + "length"
-                // existingLengthData, err := os.ReadFile(lengthPath)
-                // if err != nil {
-                //     return err
-                // }
-                // existingLength, err := strconv.Atoi(string(existingLengthData))
-                // if err != nil {
-                //     return err
-                // }
-                // newLength := existingLength + 1
-                // err = os.WriteFile(lengthPath, []byte(strconv.Itoa(newLength)), 0644)
-                // if err != nil {
-                //     return err
-                // }
-            }
-        } else {
-            return err
-        }
-    } else {
-        existingData, err := os.ReadFile(filePath)
-        if err != nil {
-            return err
-        }
-        existingRecord := deserializeRecordBytes(existingData)
-        // Modify the existing record as needed
-        for k, v := range record {
-            existingRecord[k] = v
-        }
-        serializedBytes := serializeRecordToBytes(existingRecord)
-        err = os.WriteFile(filePath, []byte(serializedBytes), 0644)
-        if err != nil {
-            return err
-        }
-    }
-    return nil
-}
 
 // update this code to also add a prev symmlink to the previous record
 // to make a doubly linked list basically
@@ -158,9 +51,9 @@ func (f *Filecab) saveHistory(level int, record map[string]string) error {
     // serialize the record with the existing serializeRecordToBytes function
     // and append the bytes, followed by 2 new lines
     
-    parts := strings.Split(record["id"], "/records/")
+    parts := strings.Split(record["id"], "/"+recordsName+"/")
     parts = parts[0:len(parts)-level]
-    usedId := strings.Join(parts, "/records/")
+    usedId := strings.Join(parts, "/"+recordsName+"/")
     // fmt.Println(level, "used:", usedId, "orig:", record["id"])
     
     // return nil
@@ -180,6 +73,9 @@ func (f *Filecab) saveHistory(level int, record map[string]string) error {
 // const singleFileHistory = true
 const singleFileHistory = false
 
+
+// const recordsName = "rcrds"
+const recordsName = "these_are_the_records"
 func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     // if !doLog {
     //     return nil
@@ -189,14 +85,15 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     if strings.HasSuffix(record["id"], "/") {
         originalID = record["id"]
         now := time.Now()
-        record["id"] += "records/" + now.Format("2006/01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
-        // record["id"] += "records/" + generateUniqueID() + "_" + nameize(record["name"])
+        record["id"] += recordsName + "/" + now.Format("2006_01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        // record["id"] += recordsName + "/" + generateUniqueID() + "_" + nameize(record["name"])
         isNew = true
     }
     
     record["id"] = strings.ReplaceAll(record["id"], "..", "")
     fullDir := f.RootDir + "/" + record["id"]
     filePath := fullDir + "/" + "record.txt"
+    
     if isNew {
         // fmt.Println("creating", record["id"], "with", len(record), "fields")
         timeStr := time.Now().Format(time.RFC3339Nano)
@@ -223,6 +120,8 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             go func() {
                 // errCh <- os.MkdirAll(fullDir, os.ModePerm)
                 errCh <- os.Symlink(f.RootDir + "/" + record["override_symlink"], filePath)
+                // Todo: make relative
+                // errCh <- os.Symlink("./" + record["override_symlink"], filePath)
             }()
         }
 
@@ -252,11 +151,11 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     // note that saveInternal updates the id
 
                     // save up one level only
-                    parts := strings.Split(theIdBefore, "/records/")
+                    parts := strings.Split(theIdBefore, "/"+recordsName+"/")
                     parts = parts[0:len(parts)-1]
 
                     hr = map[string]string{}
-                    hr["id"] = strings.Join(parts, "/records/") + "/history/"
+                    hr["id"] = strings.Join(parts, "/"+recordsName+"/") + "/history/"
                     hr["override_symlink"] = historyId + "/record.txt"
                     errCh <- f.saveInternal(false, hr)
                     // errCh <- nil
@@ -267,12 +166,14 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         lastPath := f.RootDir + "/" + originalID + "last"
         _, err = os.Stat(lastPath);
         if os.IsNotExist(err) {
-            err = os.Symlink(fullDir, lastPath)
+            // err = os.Symlink(fullDir, lastPath)
+            err = os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), lastPath)
             if err != nil {
                 return err
             }
             firstPath := f.RootDir + "/" + originalID + "first"
-            err = os.Symlink(fullDir, firstPath)
+            // err = os.Symlink(fullDir, firstPath)
+            err = os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), firstPath)
             if err != nil {
                 return err
             }
@@ -288,20 +189,23 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             // }
         } else if err == nil {
             prevLastDir, err := os.Readlink(lastPath)
+            fmt.Println("reading link:", prevLastDir)
             if err != nil {
                 return err
             }
             // "next" part
             errChCount++
             go func() {
-                nextPath := prevLastDir + "/next"
-                errCh <- os.Symlink(fullDir, nextPath)
+                nextPath := f.RootDir + "/" + originalID + prevLastDir[2:] + "/next"
+                fmt.Println("next is saving to", nextPath)
+                errCh <- os.Symlink("../../../" + strings.TrimPrefix(record["id"], originalID), nextPath)
+                // errCh <- os.Symlink(fullDir, nextPath)
             }()
             // "prev" part
             errChCount++
             go func() {
                 prevPath := fullDir + "/prev"
-                errCh <- os.Symlink(prevLastDir, prevPath)
+                errCh <- os.Symlink("../../../" + strings.TrimPrefix(prevLastDir[2:], originalID), prevPath)
             }()
             // "last" part including removing and renaming
             errChCount += 2
@@ -312,7 +216,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     return
                 }
                 errCh <- nil
-                errCh <- os.Symlink(fullDir, lastPath)
+                errCh <- os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), lastPath)
             }()
             
             // slower barely
@@ -368,11 +272,11 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     // note that saveInternal updates the id
 
                     // save up one level only
-                    parts := strings.Split(theIdBefore, "/records/")
+                    parts := strings.Split(theIdBefore, "/"+recordsName+"/")
                     parts = parts[0:len(parts)-1]
 
                     hr = map[string]string{}
-                    hr["id"] = strings.Join(parts, "/records/") + "/history/"
+                    hr["id"] = strings.Join(parts, "/"+recordsName+"/") + "/history/"
                     hr["override_symlink"] = historyId + "/record.txt"
                     // fmt.Println("saving update", hr["id"], "_coral")
                     errCh <- f.saveInternal(false, hr)
@@ -402,89 +306,6 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     return nil
 }
 
-func (f *Filecab) Save_old2(record map[string]string) error {
-    f.mu.Lock()
-    defer f.mu.Unlock()
-    
-    isNew := false
-    var originalID = ""
-    if strings.HasSuffix(record["id"], "/") {
-        originalID = record["id"]
-        now := time.Now()
-        record["id"] += now.Format("2006/01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
-        isNew = true
-    }
-    
-    record["id"] = strings.ReplaceAll(record["id"], "..", "")
-    fullDir := f.RootDir + "/" + record["id"]
-    filePath := fullDir + "/" + "record.txt"
-    if isNew {
-        err := os.MkdirAll(fullDir, os.ModePerm)
-        if err != nil {
-            return err
-        }
-        serializedBytes := serializeRecordToBytes(record)
-        err = os.WriteFile(filePath, serializedBytes, 0644)
-        if err != nil {
-            return err
-        }
-        
-        lastPath := f.RootDir + "/" + originalID + "last"
-        _, err = os.Stat(lastPath);
-        if os.IsNotExist(err) {
-            err = os.Symlink(fullDir, lastPath)
-            if err != nil {
-                return err
-            }
-            firstPath := f.RootDir + "/" + originalID + "first"
-            err = os.Symlink(fullDir, firstPath)
-            if err != nil {
-                return err
-            }
-            lengthPath := f.RootDir + "/" + originalID + "length"
-            err = os.WriteFile(lengthPath, []byte("1"), 0644)
-            if err != nil {
-                return err
-            }
-        } else if err == nil {
-            prevLastDir, err := os.Readlink(lastPath)
-            if err != nil {
-                return err
-            }
-            nextPath := prevLastDir + "/next"
-            if err := os.Symlink(fullDir, nextPath); err != nil {
-                return err
-            }
-            prevPath := fullDir + "/prev"
-            if err := os.Symlink(prevLastDir, prevPath); err != nil {
-                return err
-            }
-            if err := os.Remove(lastPath); err != nil && !os.IsNotExist(err) {
-                return err
-            }
-            if err := os.Symlink(fullDir, lastPath); err != nil {
-                return err
-            }
-        } else {
-            return err
-        }
-    } else {
-        existingData, err := os.ReadFile(filePath)
-        if err != nil {
-            return err
-        }
-        existingRecord := deserializeRecordBytes(existingData)
-        for k, v := range record {
-            existingRecord[k] = v
-        }
-        serializedBytes := serializeRecordToBytes(existingRecord)
-        err = os.WriteFile(filePath, []byte(serializedBytes), 0644)
-        if err != nil {
-            return err
-        }
-    }
-    return nil
-}
 
 
 
