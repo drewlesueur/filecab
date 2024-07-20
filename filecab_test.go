@@ -20,7 +20,7 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 10_000
+const maxLoop = 100_000
 // const maxLoop = 10
 const repeat = 1
 const extraFields = 100
@@ -82,6 +82,9 @@ func TestFilecab(t *testing.T) {
     records, err = fc.Load4("accounts")
     assert.Nil(t, err)
     fmt.Println("number of records: ", len(records))
+    // indentJSON, err := json.MarshalIndent(records, "", "  ")
+    // assert.Nil(t, err)
+    // fmt.Println(string(indentJSON))
     fmt.Println("reading4 took", time.Since(start), "_lime")
 
     start = time.Now()
@@ -255,22 +258,35 @@ func TestMongoInsertion(t *testing.T) {
     }
     fmt.Println("mongo write took", time.Since(start), "_saddlebrown")
 
+    // start = time.Now()
+    // cursor, err := col.Find(context.TODO(), bson.D{})
+    // assert.Nil(t, err)
+    // defer cursor.Close(context.TODO())
+    // var accounts []map[string]string
+    // for cursor.Next(context.TODO()) {
+    //     var result bson.M
+    //     err := cursor.Decode(&result)
+    //     assert.Nil(t, err)
+    //     account := make(map[string]string)
+    //     for k, v := range result {
+    //         account[k] = fmt.Sprintf("%v", v)
+    //     }
+    //     accounts = append(accounts, account)
+    // }
+    // fmt.Println("mongo read took", time.Since(start), "_saddlebrown")
+    
+    
     start = time.Now()
-    cursor, err := col.Find(context.TODO(), bson.D{})
+    cur, err := col.Find(context.TODO(), bson.D{})
     assert.Nil(t, err)
-    defer cursor.Close(context.TODO())
+    defer cur.Close(context.TODO())
     var accounts []map[string]string
-    for cursor.Next(context.TODO()) {
-        var result bson.M
-        err := cursor.Decode(&result)
-        assert.Nil(t, err)
-        account := make(map[string]string)
-        for k, v := range result {
-            account[k] = fmt.Sprintf("%v", v)
-        }
-        accounts = append(accounts, account)
-    }
-    fmt.Println("mongo read took", time.Since(start), "_saddlebrown")
+    err = cur.All(context.TODO(), &accounts)
+    assert.Nil(t, err)
+    fmt.Println("mongo read2 took", time.Since(start), "_saddlebrown")
+    // indentJSON, err := json.MarshalIndent(accounts, "", "  ")
+    // assert.Nil(t, err)
+    // fmt.Println(string(indentJSON))
 
     start = time.Now()
     for i, account := range accounts {

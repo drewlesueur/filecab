@@ -94,6 +94,8 @@ func (f *Filecab) saveOrder(record map[string]string) error {
 const singleFileHistory = true
 // const singleFileHistory = false
 
+const linkedList = false
+// const linkedList = true
 
 const recordsName = "records"
 // const recordsName = "records"
@@ -188,72 +190,78 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             }
         }
 
-        lastPath := f.RootDir + "/" + originalID + "last"
-        _, err = os.Stat(lastPath);
-        if os.IsNotExist(err) {
-            // err = os.Symlink(fullDir, lastPath)
-            err = os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), lastPath)
-            if err != nil {
-                return err
-            }
-            firstPath := f.RootDir + "/" + originalID + "first"
-            // err = os.Symlink(fullDir, firstPath)
-            err = os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), firstPath)
-            if err != nil {
-                return err
-            }
-            // lengthPath := f.RootDir + "/" + originalID + "length"
-            // err = os.WriteFile(lengthPath, []byte("1"), 0644)
-            // if err != nil {
-            //     return err
-            // }
-            // versionPath := f.RootDir + "/" + originalID + "version"
-            // err = os.WriteFile(lengthPath, []byte("1"), 0644)
-            // if err != nil {
-            //     return err
-            // }
-        } else if err == nil {
-            prevLastDir, err := os.Readlink(lastPath)
-            // fmt.Println("reading link:", prevLastDir)
-            if err != nil {
-                return err
-            }
-            // "next" part
-            errChCount++
-            go func() {
-                nextPath := f.RootDir + "/" + originalID + prevLastDir[2:] + "/next"
-                errCh <- os.Symlink("../../../" + strings.TrimPrefix(record["id"], originalID), nextPath)
-                // errCh <- os.Symlink(fullDir, nextPath)
-            }()
-            // "prev" part
-            errChCount++
-            go func() {
-                prevPath := fullDir + "/prev"
-                errCh <- os.Symlink("../../../" + strings.TrimPrefix(prevLastDir[2:], originalID), prevPath)
-            }()
-            // "last" part including removing and renaming
-            errChCount += 2
-            go func() {
-                if err := os.Remove(lastPath); err != nil && !os.IsNotExist(err) {
-                    errCh <- err
-                    errCh <- nil
-                    return
+        linkedList := false 
+        if linkedList {
+            lastPath := f.RootDir + "/" + originalID + "last"
+            _, err = os.Stat(lastPath);
+            if os.IsNotExist(err) {
+                // err = os.Symlink(fullDir, lastPath)
+                err = os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), lastPath)
+                if err != nil {
+                    return err
                 }
-                errCh <- nil
-                errCh <- os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), lastPath)
-            }()
-            
-            // slower barely
-            // newSymlink := lastPath + ".new"
-            // if err := os.Symlink(fullDir, newSymlink); err != nil {
-            //     return err
-            // }
-            // if err := os.Rename(newSymlink, lastPath); err != nil {
-            //     return err
-            // }
-        } else {
-            return err
+                firstPath := f.RootDir + "/" + originalID + "first"
+                // err = os.Symlink(fullDir, firstPath)
+                err = os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), firstPath)
+                if err != nil {
+                    return err
+                }
+                
+                // lengthPath := f.RootDir + "/" + originalID + "length"
+                // err = os.WriteFile(lengthPath, []byte("1"), 0644)
+                // if err != nil {
+                //     return err
+                // }
+                // versionPath := f.RootDir + "/" + originalID + "version"
+                // err = os.WriteFile(lengthPath, []byte("1"), 0644)
+                // if err != nil {
+                //     return err
+                // }
+            } else if err == nil {
+                prevLastDir, err := os.Readlink(lastPath)
+                // fmt.Println("reading link:", prevLastDir)
+                if err != nil {
+                    return err
+                }
+                // "next" part
+                errChCount++
+                go func() {
+                    nextPath := f.RootDir + "/" + originalID + prevLastDir[2:] + "/next"
+                    errCh <- os.Symlink("../../../" + strings.TrimPrefix(record["id"], originalID), nextPath)
+                    // errCh <- os.Symlink(fullDir, nextPath)
+                }()
+                // "prev" part
+                errChCount++
+                go func() {
+                    prevPath := fullDir + "/prev"
+                    errCh <- os.Symlink("../../../" + strings.TrimPrefix(prevLastDir[2:], originalID), prevPath)
+                }()
+                // "last" part including removing and renaming
+                errChCount += 2
+                go func() {
+                    if err := os.Remove(lastPath); err != nil && !os.IsNotExist(err) {
+                        errCh <- err
+                        errCh <- nil
+                        return
+                    }
+                    errCh <- nil
+                    errCh <- os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), lastPath)
+                }()
+        
+                // slower barely
+                // newSymlink := lastPath + ".new"
+                // if err := os.Symlink(fullDir, newSymlink); err != nil {
+                //     return err
+                // }
+                // if err := os.Rename(newSymlink, lastPath); err != nil {
+                //     return err
+                // }
+            } else {
+                return err
+            }
         }
+        
+        
         for i := 0; i < errChCount; i++ {
             if err := <-errCh; err != nil {
                 return err
