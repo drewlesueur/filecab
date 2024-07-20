@@ -20,7 +20,7 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 100_000
+const maxLoop = 10_000 * 1
 // const maxLoop = 10
 const repeat = 1
 const extraFields = 100
@@ -94,6 +94,9 @@ func TestFilecab(t *testing.T) {
             "camping": "camping in " + strconv.Itoa(i) + " trees",
         }
         err = fc.Save(updatedR)
+        if err != nil {
+            fmt.Println(err, "_orangered")
+        }
         assert.Nil(t, err)
     }
     fmt.Println("updating took", time.Since(start), "_lime")

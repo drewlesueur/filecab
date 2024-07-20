@@ -35,6 +35,7 @@ type Filecab struct {
     mu     sync.RWMutex
     RootDir string
     // cachedDir map[string]bool
+    openFiles map[string]*os.File
 }
 
 // update this code to also add a prev symmlink to the previous record
@@ -45,46 +46,111 @@ func (f *Filecab) Save(record map[string]string) error {
     return f.saveInternal(true, record)
 }
 
-func (f *Filecab) saveHistory(level int, record map[string]string, serializedBytes []byte) error {
-    // if level != 0 {
-    //     return nil
-    // }
-    // return nil
-        // open a file for appending that's record["id"] + "/history.txt"
-        // serialize the record with the existing serializeRecordToBytes function
-        // and append the bytes, followed by 2 new lines
-    
-        parts := strings.Split(record["id"], "/"+recordsName+"/")
-        parts = parts[0:len(parts)-level]
-        usedId := strings.Join(parts, "/"+recordsName+"/")
-        // fmt.Println(level, "used:", usedId, "orig:", record["id"])
-    
-    // return nil
-    filePath := f.RootDir + "/" + usedId + "/history.txt"
-    file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-    if err != nil {
-        return err
+
+func (f *Filecab) openFile(filePath string, keepOpen map[string]bool) (*os.File, error) {
+    file, ok := f.openFiles[filePath]
+    if !ok {
+        newFile, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+        if err != nil {
+            return nil, err
+        }
+        file = newFile
+        f.openFiles[filePath] = file
+        if len(f.openFiles) > 100 {
+            for openPath, openFile := range f.openFiles {
+                if filePath != openPath && !keepOpen[openPath] {
+                    openFile.Close()
+                    delete(f.openFiles, openPath)
+                    break
+                }
+            }
+        }
     }
-    defer file.Close()
+    return file, nil
+}
+
+type MetaFiles struct {
+    RecordHist *os.File
+    ParentHist *os.File
+    ParentOrder *os.File
+}
+// func (f *Filecab) MetaFilesForRecord(record map[string]string], includeOrder bool) (*ThreeFilesAndName, error) {
+//         parts := strings.Split(record["id"], "/"+recordsName+"/")
+//         parentId := strings.Join(parts[0:len(parts)-1], "/"+recordsName+"/")
+//         parentHist := f.RootDir + "/" + usedId + "/history.txt"
+//         recordHist := f.RootDir + "/" + record["id"] + "/history.txt"
+//         // localRecordId := parts[len(parts) - 1]
+//         recordOrder := f.RootDir + "/" + parentDir + "/order.txt"
+//         
+//         recordHistFile, err := f.openFile(recordHist)
+//         if err != nil {
+//             return nil, err
+//         }
+//         parentHistFile, err := f.openFile(parentHist)
+//         if err != nil {
+//             return nil, err
+//         }
+//         recordOrderFile, err := f.openFile(recordOrder)
+//         if err != nil {
+//             return nil, err
+//         }
+//         return &ThreeFilesAndName{
+//             RecordHist: recordHistFile,
+//             ParentHist: parentHistFile,
+//             ParentOrder: recordOrderFile,
+//         }, nil
+// }
+
+
+func (f *Filecab) MetaFilesForRecord(record map[string]string, includeOrder bool) (*MetaFiles, error) {
+    parts := strings.Split(record["id"], "/"+recordsName+"/")
+    parentId := strings.Join(parts[0:len(parts)-1], "/"+recordsName+"/")
+    parentHist := f.RootDir + "/" + parentId + "/history.txt"
+    recordHist := f.RootDir + "/" + record["id"] + "/history.txt"
+    var recordOrder string
+    // localRecordId := parts[len(parts) - 1]
+    
+    keepOpen := map[string]bool{
+        parentHist: true,
+        recordHist: true,
+    }
+    if includeOrder {
+        recordOrder = f.RootDir + "/" + parentId + "/order.txt"
+        keepOpen[recordOrder] = true
+    }
+    recordHistFile, err := f.openFile(recordHist, keepOpen)
+    if err != nil {
+        return nil, err
+    }
+    parentHistFile, err := f.openFile(parentHist, keepOpen)
+    if err != nil {
+        return nil, err
+    }
+    var recordOrderFile *os.File
+    if includeOrder {
+        recordOrderFile, err = f.openFile(recordOrder, keepOpen)
+        if err != nil {
+            return nil, err
+        }
+    }
+    return &MetaFiles{
+        RecordHist:  recordHistFile,
+        ParentHist:  parentHistFile,
+        ParentOrder: recordOrderFile,
+    }, nil
+
+}
+
+func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, file *os.File) error {
     if _, err := file.Write(serializedBytes); err != nil {
         return err
     }
     return nil
 }
 
-func (f *Filecab) saveOrder(record map[string]string) error {
-    // return nil
+func (f *Filecab) saveOrder(record map[string]string, file *os.File) error {
     parts := strings.Split(record["id"], "/"+recordsName+"/")
-    parentDir := strings.Join(parts[0:len(parts)-1], "/"+recordsName+"/")
     localRecordId := parts[len(parts) - 1]
-    
-    
-    filePath := f.RootDir + "/" + parentDir + "/order.txt"
-    file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-    if err != nil {
-        return err
-    }
-    defer file.Close()
     if _, err := file.Write([]byte(localRecordId + "\n")); err != nil {
         return err
     }
@@ -146,20 +212,28 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                 errCh <- os.Symlink(record["override_symlink"], filePath)
             }()
         }
-        errChCount++
-        go func() {
-            errCh <- f.saveOrder(record)
-        }()
+        // errChCount++
+        // go func() {
+        //     errCh <- f.saveOrder(record)
+        // }()
 
         if doLog {
             if singleFileHistory {
+                metaFiles, err := f.MetaFilesForRecord(record, true)
+                if err != nil {
+                    return err
+                }
                 errChCount++
                 go func() {
-                    errCh <- f.saveHistory(0, record, serializedBytes)
+                    errCh <- f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
                 }()
                 errChCount++
                 go func() {
-                    errCh <- f.saveHistory(1, record, serializedBytes)
+                    errCh <- f.saveHistory(record, serializedBytes, metaFiles.ParentHist)
+                }()
+                errChCount++
+                go func() {
+                    errCh <- f.saveOrder(record, metaFiles.ParentOrder)
                 }()
             } else {
                 errChCount += 2
@@ -279,13 +353,17 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         var errChCount = 0
         if doLog {
             if singleFileHistory {
+                metaFiles, err := f.MetaFilesForRecord(record, false)
+                if err != nil {
+                    return err
+                }
                 errChCount++
                 go func() {
-                    errCh <- f.saveHistory(0, record, serializedBytes)
+                    errCh <- f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
                 }()
                 errChCount++
                 go func() {
-                    errCh <- f.saveHistory(1, record, serializedBytes)
+                    errCh <- f.saveHistory(record, serializedBytes, metaFiles.ParentHist)
                 }()
             } else {
                 errChCount += 2
@@ -491,6 +569,8 @@ func (f *Filecab) Load4(thePath string) ([]map[string]string, error) {
     return records, nil
 }
 
+// todo: keep history file open...
+
 func (f *Filecab) Load2(thePath string) ([]map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
@@ -568,6 +648,7 @@ func New(rootDir string) *Filecab {
     return &Filecab{
         RootDir: rootDir,
         // cachedDir: map[string]bool{},
+        openFiles: map[string]*os.File{},
     }
 }
 
