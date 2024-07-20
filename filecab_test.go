@@ -20,7 +20,7 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 10_000 * 1
+const maxLoop = 1_000 * 10
 // const maxLoop = 10
 const repeat = 1
 const extraFields = 100
@@ -148,13 +148,134 @@ func TestSqliteInsertion(t *testing.T) {
             name TEXT,
             birthdate TEXT,
             quote TEXT,
-            camping TEXT
+            camping TEXT,
+            field0 TEXT,
+            field1 TEXT,
+            field2 TEXT,
+            field3 TEXT,
+            field4 TEXT,
+            field5 TEXT,
+            field6 TEXT,
+            field7 TEXT,
+            field8 TEXT,
+            field9 TEXT,
+            field10 TEXT,
+            field11 TEXT,
+            field12 TEXT,
+            field13 TEXT,
+            field14 TEXT,
+            field15 TEXT,
+            field16 TEXT,
+            field17 TEXT,
+            field18 TEXT,
+            field19 TEXT,
+            field20 TEXT,
+            field21 TEXT,
+            field22 TEXT,
+            field23 TEXT,
+            field24 TEXT,
+            field25 TEXT,
+            field26 TEXT,
+            field27 TEXT,
+            field28 TEXT,
+            field29 TEXT,
+            field30 TEXT,
+            field31 TEXT,
+            field32 TEXT,
+            field33 TEXT,
+            field34 TEXT,
+            field35 TEXT,
+            field36 TEXT,
+            field37 TEXT,
+            field38 TEXT,
+            field39 TEXT,
+            field40 TEXT,
+            field41 TEXT,
+            field42 TEXT,
+            field43 TEXT,
+            field44 TEXT,
+            field45 TEXT,
+            field46 TEXT,
+            field47 TEXT,
+            field48 TEXT,
+            field49 TEXT,
+            field50 TEXT,
+            field51 TEXT,
+            field52 TEXT,
+            field53 TEXT,
+            field54 TEXT,
+            field55 TEXT,
+            field56 TEXT,
+            field57 TEXT,
+            field58 TEXT,
+            field59 TEXT,
+            field60 TEXT,
+            field61 TEXT,
+            field62 TEXT,
+            field63 TEXT,
+            field64 TEXT,
+            field65 TEXT,
+            field66 TEXT,
+            field67 TEXT,
+            field68 TEXT,
+            field69 TEXT,
+            field70 TEXT,
+            field71 TEXT,
+            field72 TEXT,
+            field73 TEXT,
+            field74 TEXT,
+            field75 TEXT,
+            field76 TEXT,
+            field77 TEXT,
+            field78 TEXT,
+            field79 TEXT,
+            field80 TEXT,
+            field81 TEXT,
+            field82 TEXT,
+            field83 TEXT,
+            field84 TEXT,
+            field85 TEXT,
+            field86 TEXT,
+            field87 TEXT,
+            field88 TEXT,
+            field89 TEXT,
+            field90 TEXT,
+            field91 TEXT,
+            field92 TEXT,
+            field93 TEXT,
+            field94 TEXT,
+            field95 TEXT,
+            field96 TEXT,
+            field97 TEXT,
+            field98 TEXT,
+            field99 TEXT
         )
     `)
-    
+
+
     
     assert.Nil(t, err)
-    stmt, err := db.Prepare(`INSERT INTO accounts (name, birthdate, quote) VALUES (?, ?, ?)`)
+    // stmt, err := db.Prepare(`INSERT INTO accounts (name, birthdate, quote) VALUES (?, ?, ?)`)
+    // update the insert to handle all the fields
+    // format itnine in each line
+// "?, ".repeat(103)
+    stmt, err := db.Prepare(`INSERT INTO accounts (
+            name, birthdate, quote, field0, field1, field2, field3, 
+            field4, field5, field6, field7, field8, field9, field10, field11,
+            field12, field13, field14, field15, field16, field17, field18, 
+            field19, field20, field21, field22, field23, field24, field25, 
+            field26, field27, field28, field29, field30, field31, field32, 
+            field33, field34, field35, field36, field37, field38, field39, 
+            field40, field41, field42, field43, field44, field45, field46, 
+            field47, field48, field49, field50, field51, field52, field53, 
+            field54, field55, field56, field57, field58, field59, field60, 
+            field61, field62, field63, field64, field65, field66, field67, 
+            field68, field69, field70, field71, field72, field73, field74, 
+            field75, field76, field77, field78, field79, field80, field81, 
+            field82, field83, field84, field85, field86, field87, field88, 
+            field89, field90, field91, field92, field93, field94, field95, 
+            field96, field97, field98, field99
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     assert.Nil(t, err)
     defer stmt.Close()
     r := []interface{}{"Mickey", "2001-01-01", "life is fun\nI like life"}
@@ -170,9 +291,15 @@ func TestSqliteInsertion(t *testing.T) {
             "2001-01-01",
             strings.Repeat("I want to succeed\nat everything\n", repeat),
         }
+        for j := 0; j < extraFields; j++ {
+            jStr := strconv.Itoa(j)
+            r = append(r, "value" + jStr)
+        }
         _, err = stmt.Exec(r...)
         assert.Nil(t, err)
     }
+    
+
     fmt.Println("sqlite write took", time.Since(start), "_orangered")
     
     // add code to select * from accounts
