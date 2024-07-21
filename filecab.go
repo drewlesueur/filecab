@@ -524,6 +524,7 @@ func (f *Filecab) Load3(thePath string) ([]map[string]string, error) {
     }
     return records, nil
 }
+
 func (f *Filecab) Load4(thePath string) ([]map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
@@ -568,6 +569,110 @@ func (f *Filecab) Load4(thePath string) ([]map[string]string, error) {
     }
     return records, nil
 }
+
+
+
+
+func (f *Filecab) Load5(thePath string, offset, limit int64) ([]map[string]string, error) {
+    f.mu.RLock()
+    defer f.mu.RUnlock()
+    // fixed size local ids
+    
+    // each item in the file is 66 bytes separated by a new line
+    // update this code to use the offset and limit args
+    // so offset of 0 and limit of 1 will actually just grab 66 bytes from file
+    // offset of 0 and limit of 2 will grab 66 + 1 + 66 bytes. (the 1 being newline)
+    // offset of 0 and limit of 3 will grab 66 + 1 + 66 + 1 + 66 bytes. (the 1s being newline)
+    // use the Seek and Read operations to read one large chunk
+    // if offset is negative, start from the emd of the file
+    // for example offset of -2 with limit 1 will give the second to last item in the file
+    // don't read the whole file in to memory, just use Seek and Read to pull out a chunk
+    // to memory, then split it on newline
+    // Construct the path to order.txt
+    // update this code to not get the lengt of the file, but use SEEK_END 
+    // when dealing with negative offsets
+    // but I only want one seek call at all
+    // so either a SEEK_SET, or a SEEK_END depending in megative offset
+    // I do not want a file.Stat call at all
+    //
+    orderPath := f.RootDir + "/" + thePath + "/order.txt"
+    file, err := os.Open(orderPath)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
+    const itemSize = 63 // todo: make 63
+    const newlineSize = 1
+    var startPos int64
+    if offset < 0 {
+        totalOffset := offset * (itemSize + newlineSize)
+        startPos, err = file.Seek(totalOffset, os.SEEK_END)
+        if err != nil {
+            return nil, err
+        }
+    } else {
+        startPos = offset * (itemSize + newlineSize)
+        _, err = file.Seek(startPos, os.SEEK_SET)
+        if err != nil {
+            return nil, err
+        }
+    }
+
+    chunkSize := limit * (itemSize + newlineSize) - newlineSize
+    buffer := make([]byte, chunkSize)
+    n, err := file.Read(buffer)
+    if err != nil && err != io.EOF {
+        return nil, err
+    }
+    if n == 0 {
+        return nil, nil // Handle case where no data was read
+    }
+    if n != len(buffer) { // adjust the buffer if we read less than expected
+        buffer = buffer[:n]
+    }
+    paths := strings.Split(string(buffer), "\n")
+    // for _, path := range paths {
+    //     fmt.Println(path)
+    // }
+    // return nil, nil
+    
+    
+    var maxConcurrency = 100
+    var ch = make(chan int, maxConcurrency)
+    var records = make([]map[string]string, len(paths))
+    errCh := make(chan error, len(paths))
+    for i, path := range paths {
+        path := f.RootDir + "/" + thePath  + "/" + recordsName + "/" + path
+        i := i
+        ch <- 1
+        go func(path string) {
+            defer func() {
+                <- ch
+            }()
+            recordFile := path + "/record.txt"
+            data, err := os.ReadFile(recordFile)
+            if err != nil {
+                panic(err)
+                errCh <- err
+                return
+            }
+            record := deserializeRecordBytes(data)
+            records[i] = record
+        }(path)
+    }
+    for i := 0; i < maxConcurrency; i++ {
+        ch <- 1
+    }
+    close(errCh)
+    if len(errCh) > 0 {
+        return nil, <-errCh
+    }
+    return records, nil
+}
+
+
+
+
 
 // todo: keep history file open...
 
@@ -791,20 +896,11 @@ func deserializeRecordBytes(data []byte) map[string]string {
 
 
 
-// var counter int
-// func generateUniqueID() string {
-//     counter++
-//     return strconv.Itoa(counter)
-// }
-// 0 pad this to 9 digits
-
 var counter int
 func generateUniqueID() string {
-    counter++
-    return fmt.Sprintf("%09d", counter)
+    counter = (counter + 1) % 1000000
+    return fmt.Sprintf("%06d", counter)
 }
-
-
 
 func generateUniqueID_old() string {
 	randomBytes := make([]byte, 8)
