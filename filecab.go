@@ -141,21 +141,34 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, includeOrder bool
 
 }
 
-func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, file *os.File) error {
-    if _, err := file.Write(serializedBytes); err != nil {
-        return err
-    }
-    return nil
-}
+// func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, file *os.File) error {
+//     if _, err := file.Write(serializedBytes); err != nil {
+//         return err
+//     }
+//     return nil
+// }
 
+func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, file *os.File) (int64, error) {
+    if _, err := file.Write(serializedBytes); err != nil {
+        return 0, err
+    }
+    // return 0, nil
+    
+    stat, err := file.Stat()
+    if err != nil {
+        return 0, err
+    }
+    return stat.Size(), nil
+}
 func (f *Filecab) saveOrder(record map[string]string, file *os.File) error {
     parts := strings.Split(record["id"], "/"+recordsName+"/")
     localRecordId := parts[len(parts) - 1]
     if _, err := file.Write([]byte(localRecordId + "\n")); err != nil {
         return err
-    }
+     }
     return nil
-}
+ }
+
 
 const singleFileHistory = true
 // const singleFileHistory = false
@@ -199,7 +212,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         }
         errCh := make(chan error, 12)
         var errChCount = 0
-        
+         
         if record["override_symlink"] == "" {
             errChCount++
             go func() {
@@ -208,7 +221,6 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         } else {
             errChCount++
             go func() {
-                // errCh <- os.MkdirAll(fullDir, os.ModePerm)
                 errCh <- os.Symlink(record["override_symlink"], filePath)
             }()
         }
@@ -223,13 +235,23 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                 if err != nil {
                     return err
                 }
+                // errChCount++
+                // go func() {
+                //     size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
+                //     _ = size
+                //     errCh <- err
+                // }()
+                size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
+                _ = size
+                if err != nil {
+                    return err
+                }
+                record["version"] = strconv.Itoa(int(size))
                 errChCount++
                 go func() {
-                    errCh <- f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
-                }()
-                errChCount++
-                go func() {
-                    errCh <- f.saveHistory(record, serializedBytes, metaFiles.ParentHist)
+                    size, err := f.saveHistory(record, serializedBytes, metaFiles.ParentHist)
+                    _ = size
+                    errCh <- err
                 }()
                 errChCount++
                 go func() {
@@ -359,11 +381,15 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                 }
                 errChCount++
                 go func() {
-                    errCh <- f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
+                    size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
+                    _ = size
+                    errCh <- err
                 }()
                 errChCount++
                 go func() {
-                    errCh <- f.saveHistory(record, serializedBytes, metaFiles.ParentHist)
+                    size, err := f.saveHistory(record, serializedBytes, metaFiles.ParentHist)
+                    _ = size
+                    errCh <- err
                 }()
             } else {
                 errChCount += 2

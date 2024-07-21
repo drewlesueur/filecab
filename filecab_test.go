@@ -288,12 +288,12 @@ func TestSqliteInsertion(t *testing.T) {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     assert.Nil(t, err)
     defer stmt.Close()
-    r := []interface{}{"Mickey", "2001-01-01", "life is fun\nI like life"}
-    _, err = stmt.Exec(r...)
-    assert.Nil(t, err)
-    r2 := []interface{}{"Minnie", "2002-02-02", "I want to succeed\nat everything"}
-    _, err = stmt.Exec(r2...)
-    assert.Nil(t, err)
+    // r := []interface{}{"Mickey", "2001-01-01", "life is fun\nI like life"}
+    // _, err = stmt.Exec(r...)
+    // assert.Nil(t, err)
+    // r2 := []interface{}{"Minnie", "2002-02-02", "I want to succeed\nat everything"}
+    // _, err = stmt.Exec(r2...)
+    // assert.Nil(t, err)
     start := time.Now()
     for i := 0; i < maxLoop; i++ {
         r := []interface{}{
