@@ -72,17 +72,9 @@ func TestFilecab(t *testing.T) {
     // fmt.Println("number of records: ", len(records))
     // fmt.Println("reading took", time.Since(start), "_lime")
 
-    start = time.Now()
-    records, err := fc.Load4("accounts")
-    assert.Nil(t, err)
-    fmt.Println("number of records: ", len(records))
-    // indentJSON, err := json.MarshalIndent(records, "", "  ")
-    // assert.Nil(t, err)
-    // fmt.Println(string(indentJSON))
-    fmt.Println("reading4 took", time.Since(start), "_lime")
 
     start = time.Now()
-    records, err = fc.Load5("accounts", 500, 100)
+    records, err := fc.Load5("accounts", 500, 100)
     fmt.Println("number of records: ", len(records))
     assert.Nil(t, err)
     fmt.Println("reading5 took", time.Since(start), "_lime")
@@ -90,6 +82,14 @@ func TestFilecab(t *testing.T) {
     // assert.Nil(t, err)
     // fmt.Println(string(indentJSON))
 
+    start = time.Now()
+    records, err = fc.Load4("accounts")
+    assert.Nil(t, err)
+    fmt.Println("number of records: ", len(records))
+    // indentJSON, err := json.MarshalIndent(records, "", "  ")
+    // assert.Nil(t, err)
+    // fmt.Println(string(indentJSON))
+    fmt.Println("reading4 took", time.Since(start), "_lime")
 
     start = time.Now()
     for i, r := range records {

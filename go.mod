@@ -1,4 +1,4 @@
-module filecab
+module github.com/drewlesueur/filecab
 
 go 1.22.5
 
