@@ -196,7 +196,6 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     record["id"] = strings.ReplaceAll(record["id"], "..", "")
     fullDir := f.RootDir + "/" + record["id"]
     filePath := fullDir + "/" + "record.txt"
-    serializedBytes := serializeRecordToBytes(record)
     
     if isNew {
         // fmt.Println("creating", record["id"], "with", len(record), "fields")
@@ -205,6 +204,8 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             record["updated_at"] = timeStr
             record["created_at"] = timeStr
         }
+        serializedBytes := serializeRecordToBytes(record)
+
         var err error
         err = os.MkdirAll(fullDir, os.ModePerm)
         if err != nil {
@@ -375,6 +376,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         var errChCount = 0
         if doLog {
             if singleFileHistory {
+                serializedBytes := serializeRecordToBytes(record)
                 metaFiles, err := f.MetaFilesForRecord(record, false)
                 if err != nil {
                     return err
@@ -496,7 +498,7 @@ func (f *Filecab) Load(thePath string) ([]map[string]string, error) {
     return records, nil
 }
 
-
+// Deprecated, uses symlink method
 func (f *Filecab) Load3(thePath string) ([]map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
@@ -551,7 +553,49 @@ func (f *Filecab) Load3(thePath string) ([]map[string]string, error) {
     return records, nil
 }
 
-func (f *Filecab) Load4(thePath string) ([]map[string]string, error) {
+// TODO: max
+func (f *Filecab) LoadHistorySince(thePath string, startOffset int) ([]map[string]string, error) {
+    f.mu.RLock()
+    defer f.mu.RUnlock()
+    historyPath := f.RootDir + "/" + thePath + "/history.txt"
+    
+    
+    file, err := os.Open(historyPath)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
+    _, err = file.Seek(int64(startOffset), 0)
+    if err != nil {
+        return nil, err
+    }
+    rawBytes, err := os.ReadAll(file)
+    if err != nil {
+        return nil, err
+    }
+    
+    rawRecords := bytes.Split(rawBytes, []byte("\n\n"))
+    records := make([]map[string]string, len(rawRecords))
+    for i, rawRecord := range rawRecords {
+        record := deserializeRecordBytes(rawRecord)
+        records[i] = record
+    }
+    return records, nil
+    
+}
+
+func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
+    f.mu.RLock()
+    defer f.mu.RUnlock()
+    recordPath := f.RootDir + "/" + thePath + "/record.txt"
+    data, err := os.ReadFile(recordPath)
+    if err != nil {
+        return nil, err
+    }
+    return deserializeRecordBytes(data), nil
+}
+
+func (f *Filecab) LoadRecords(thePath string) ([]map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
     // fixed size local ids
@@ -596,10 +640,7 @@ func (f *Filecab) Load4(thePath string) ([]map[string]string, error) {
     return records, nil
 }
 
-
-
-
-func (f *Filecab) Load5(thePath string, offset, limit int64) ([]map[string]string, error) {
+func (f *Filecab) LoadRecordsRange(thePath string, offset, limit int64) ([]map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
     // fixed size local ids
