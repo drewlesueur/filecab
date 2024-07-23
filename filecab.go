@@ -969,3 +969,7 @@ func readFileInChunksBackwards(filePath string, offset int64, chunkSize int64) (
 	}
 	return result, nil
 }
+
+func Yo() string {
+    return "yo"
+}
