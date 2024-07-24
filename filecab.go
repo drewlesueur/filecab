@@ -213,11 +213,12 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         }
         errCh := make(chan error, 12)
         var errChCount = 0
-         
+
         if record["override_symlink"] == "" {
             errChCount++
             go func() {
-                errCh <- os.WriteFile(filePath, serializedBytes, 0644)
+                err := os.WriteFile(filePath, serializedBytes, 0644)
+                errCh <- err
             }()
         } else {
             errChCount++
@@ -247,7 +248,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                 if err != nil {
                     return err
                 }
-                record["version"] = strconv.Itoa(int(size))
+                // todo: wrangle the version
                 errChCount++
                 go func() {
                     size, err := f.saveHistory(record, serializedBytes, metaFiles.ParentHist)
@@ -554,7 +555,7 @@ func (f *Filecab) Load3(thePath string) ([]map[string]string, error) {
 }
 
 // TODO: max
-func (f *Filecab) LoadHistorySince(thePath string, startOffset int) ([]map[string]string, error) {
+func (f *Filecab) LoadHistorySince(thePath string, startOffset int) ([]map[string]string, int, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
     historyPath := f.RootDir + "/" + thePath + "/history.txt"
@@ -562,26 +563,27 @@ func (f *Filecab) LoadHistorySince(thePath string, startOffset int) ([]map[strin
     
     file, err := os.Open(historyPath)
     if err != nil {
-        return nil, err
+        return nil, 0, err
     }
     defer file.Close()
     _, err = file.Seek(int64(startOffset), 0)
     if err != nil {
-        return nil, err
+        return nil, 0, err
     }
-    rawBytes, err := os.ReadAll(file)
+    rawBytes, err := io.ReadAll(file)
     if err != nil {
-        return nil, err
+        return nil, 0, err
     }
     
     rawRecords := bytes.Split(rawBytes, []byte("\n\n"))
+    // remove trailing \n\n
+    rawRecords = rawRecords[0:len(rawRecords)-1]
     records := make([]map[string]string, len(rawRecords))
     for i, rawRecord := range rawRecords {
         record := deserializeRecordBytes(rawRecord)
         records[i] = record
     }
-    return records, nil
-    
+    return records, startOffset + len(rawBytes), nil
 }
 
 func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
@@ -592,12 +594,31 @@ func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
     if err != nil {
         return nil, err
     }
+    historyPath := f.RootDir + "/" + thePath + "/history.txt"
+    fileInfo, err := os.Stat(historyPath)
+    if err != nil {
+        return nil, err
+    }
+    historySize := int(fileInfo.Size())
+    record := deserializeRecordBytes(data)
+    record["history_offset"] = strconv.Itoa(historySize)
     return deserializeRecordBytes(data), nil
 }
 
-func (f *Filecab) LoadRecords(thePath string) ([]map[string]string, error) {
+
+func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
+    
+    // you could make this part concurrent
+    historyPath := f.RootDir + "/" + thePath + "/history.txt"
+    fileInfo, err := os.Stat(historyPath)
+    if err != nil {
+        return nil, err
+    }
+    historySize := int(fileInfo.Size())
+    historySizeString := strconv.Itoa(historySize)
+
     // fixed size local ids
     orderPath := f.RootDir + "/" + thePath + "/order.txt"
     data, err := os.ReadFile(orderPath)
@@ -637,14 +658,25 @@ func (f *Filecab) LoadRecords(thePath string) ([]map[string]string, error) {
     if len(errCh) > 0 {
         return nil, <-errCh
     }
+    if len(records) > 0 {
+        records[0]["collection_offset"] = historySizeString
+    }
     return records, nil
 }
 
-func (f *Filecab) LoadRecordsRange(thePath string, offset, limit int64) ([]map[string]string, error) {
+func (f *Filecab) LoadRange(thePath string, offset, limit int64) ([]map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
-    // fixed size local ids
+    // you could make this part concurrent
+    historyPath := f.RootDir + "/" + thePath + "/history.txt"
+    fileInfo, err := os.Stat(historyPath)
+    if err != nil {
+        return nil, err
+    }
+    historySize := int(fileInfo.Size())
+    historySizeString := strconv.Itoa(historySize)
     
+    // fixed size local ids
     // each item in the file is 66 bytes separated by a new line
     // update this code to use the offset and limit args
     // so offset of 0 and limit of 1 will actually just grab 66 bytes from file
@@ -733,6 +765,9 @@ func (f *Filecab) LoadRecordsRange(thePath string, offset, limit int64) ([]map[s
     close(errCh)
     if len(errCh) > 0 {
         return nil, <-errCh
+    }
+    if len(records) > 0 {
+        records[0]["collection_offset"] = historySizeString
     }
     return records, nil
 }
