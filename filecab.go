@@ -525,7 +525,8 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     continue
                 }
                 if k[0] == '.' {
-                    existingRecord[k] += v
+                    existingRecord[k[1:]] += v
+                    delete(existingRecord, k)
                     continue
                 }
             }
@@ -663,7 +664,7 @@ func (f *Filecab) InitWaitFile(absolutePath string) *sync.Cond {
 }
 
 func (f *Filecab) BroadcastForFile(absolutePath string) {
-    fmt.Println("broadcasting for:", absolutePath, "#lime")
+    // fmt.Println("broadcasting for:", absolutePath, "#lime")
     c, ok := f.conds[absolutePath]
     if !ok {
         return
@@ -696,7 +697,7 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
         // should I explicitly make it the mutex from c
         f.mu.Lock() // using lock and unlock cuz of Cond
         defer f.mu.Unlock()
-        fmt.Println("stopped", historyPath, "#deepskyblue")
+        // fmt.Println("stopped", historyPath, "#deepskyblue")
         f.BroadcastForFile(historyPath)
     })
     defer stopF()
@@ -723,7 +724,7 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
         if !doWait {
             break
         } else {
-            fmt.Println("waiting for:", historyPath, "#orangered")
+            // fmt.Println("waiting for:", historyPath, "#orangered")
             c.Wait()
             if ctx.Err() != nil {
                 waitErr = ctx.Err()
