@@ -163,6 +163,9 @@ func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, 
 func (f *Filecab) saveOrder(record map[string]string, file *os.File) error {
     parts := strings.Split(record["id"], "/"+recordsName+"/")
     localRecordId := parts[len(parts) - 1]
+    if len(localRecordId) < 63 {
+        localRecordId = localRecordId + strings.Repeat("_", 63-len(localRecordId)) 
+    }
     if _, err := file.Write([]byte(localRecordId + "\n")); err != nil {
         return err
      }
@@ -432,6 +435,16 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         }
         existingRecord := deserializeRecordBytes(existingData)
         for k, v := range record {
+            if len(k) >= 2 {
+                if k[0] == '+' {
+                    // existingRecord[k] = strconv.
+                    continue
+                }
+                if k[0] == '.' {
+                    existingRecord[k] += v
+                    continue
+                }
+            }
             existingRecord[k] = v
         }
         serializedBytes := serializeRecordToBytes(existingRecord)
@@ -610,14 +623,19 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
     
-    // you could make this part concurrent
-    historyPath := f.RootDir + "/" + thePath + "/history.txt"
-    fileInfo, err := os.Stat(historyPath)
-    if err != nil {
-        return nil, err
-    }
-    historySize := int(fileInfo.Size())
-    historySizeString := strconv.Itoa(historySize)
+    // you could make this part concurrent (perf)
+    hSizeChan := make(chan string, 1)
+    go func() {
+        historyPath := f.RootDir + "/" + thePath + "/history.txt"
+        fileInfo, err := os.Stat(historyPath)
+        if err != nil {
+            hSizeChan <- "-1"
+            // return nil, err
+        }
+        historySize := int(fileInfo.Size())
+        historySizeString := strconv.Itoa(historySize)
+        hSizeChan <- historySizeString
+    }()
 
     // fixed size local ids
     orderPath := f.RootDir + "/" + thePath + "/order.txt"
@@ -627,13 +645,12 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     }
     paths := strings.Split(string(data), "\n")
     paths = paths[0:len(paths) - 1] // trailing newline
-    
     var maxConcurrency = 100
     var ch = make(chan int, maxConcurrency)
     var records = make([]map[string]string, len(paths))
     errCh := make(chan error, len(paths))
     for i, path := range paths {
-        path := f.RootDir + "/" + thePath  + "/" + recordsName + "/" + path
+        path := f.RootDir + "/" + thePath  + "/" + recordsName + "/" + strings.TrimRight(path, "_")
         i := i
         ch <- 1
         go func(path string) {
@@ -658,6 +675,7 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     if len(errCh) > 0 {
         return nil, <-errCh
     }
+    historySizeString := <- hSizeChan
     if len(records) > 0 {
         records[0]["collection_offset"] = historySizeString
     }
@@ -741,7 +759,7 @@ func (f *Filecab) LoadRange(thePath string, offset, limit int64) ([]map[string]s
     var records = make([]map[string]string, len(paths))
     errCh := make(chan error, len(paths))
     for i, path := range paths {
-        path := f.RootDir + "/" + thePath  + "/" + recordsName + "/" + path
+        path := f.RootDir + "/" + thePath  + "/" + recordsName + "/" + strings.TrimRight(path, "_")
         i := i
         ch <- 1
         go func(path string) {
@@ -841,9 +859,10 @@ func nameize(s string) string {
         processed = processed[:32]
     }
     processed = strings.ToLower(processed)
-    if len(processed) < 32 {
-        processed = processed + strings.Repeat("_", 32-len(processed)) 
-    }
+    processed = strings.TrimRight(processed, "_")
+    // if len(processed) < 32 {
+    //     processed = processed + strings.Repeat("_", 32-len(processed)) 
+    // }
     return processed
 }
 
