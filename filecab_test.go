@@ -20,7 +20,7 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 1_000 * 10
+const maxLoop = 1_000 * 1
 // const maxLoop = 10
 const repeat = 1
 const extraFields = 100
@@ -105,11 +105,11 @@ func TestFilecab(t *testing.T) {
     }
     fmt.Println("updating took", time.Since(start), "_lime")
     
-    start = time.Now()
-    records, err = fc.Load3("accounts/history")
-    assert.Nil(t, err)
-    fmt.Println("number of records: ", len(records))
-    fmt.Println("reading history took", time.Since(start), "_lime")
+    // start = time.Now()
+    // records, err = fc.Load3("accounts/history")
+    // assert.Nil(t, err)
+    // fmt.Println("number of records: ", len(records))
+    // fmt.Println("reading history took", time.Since(start), "_lime")
     // indentJSON, err := json.MarshalIndent(records, "", "  ")
     // assert.Nil(t, err)
     // fmt.Println(string(indentJSON))
@@ -482,6 +482,13 @@ func setup() {
         }
     }
     fc = New(localDir)
+}
+
+func ExampleToBase60() {
+    fmt.Println(toBase60(60 * 60 * 60 * 60))
+    
+    // Output:
+    // 10000
 }
 
 

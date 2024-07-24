@@ -11,6 +11,7 @@ import (
     "io"
     "math/rand"
     "encoding/hex"
+    "context"
     "regexp"
     "os"
     "bytes"
@@ -36,7 +37,39 @@ type Filecab struct {
     RootDir string
     // cachedDir map[string]bool
     openFiles map[string]*os.File
+    conds map[string]*sync.Cond
+    condCounts map[string]int
 }
+
+func New(rootDir string) *Filecab {
+    if rootDir == "/" {
+        panic("Root directory cannot be '/'")
+    }
+    f := &Filecab{
+        RootDir: rootDir,
+        // cachedDir: map[string]bool{},
+        openFiles: map[string]*os.File{},
+        conds: map[string]*sync.Cond{},
+        condCounts: map[string]int{},
+    }
+    // f.CondTimer()
+    return f
+    
+    
+}
+
+// func (f *Filecab) CondTimer() {
+//     ticker := time.NewTicker(2 * time.Second)
+//     go func() {
+//         for range ticker.C {
+//             f.mu.RLock()
+//             for _, cond := range f.conds {
+//                 cond.Broadcast()
+//             }
+//             f.mu.RUnlock()
+//         }
+//     }()
+// }
 
 // update this code to also add a prev symmlink to the previous record
 // to make a doubly linked list basically
@@ -73,6 +106,9 @@ type MetaFiles struct {
     RecordHist *os.File
     ParentHist *os.File
     ParentOrder *os.File
+    RecordHistPath string
+    ParentHistPath string
+    ParentOrderPath string
 }
 // func (f *Filecab) MetaFilesForRecord(record map[string]string], includeOrder bool) (*ThreeFilesAndName, error) {
 //         parts := strings.Split(record["id"], "/"+recordsName+"/")
@@ -135,8 +171,11 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, includeOrder bool
     }
     return &MetaFiles{
         RecordHist:  recordHistFile,
+        RecordHistPath:  recordHist,
         ParentHist:  parentHistFile,
+        ParentHistPath:  parentHist,
         ParentOrder: recordOrderFile,
+        ParentOrderPath: recordOrder,
     }, nil
 
 }
@@ -160,10 +199,12 @@ func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, 
     }
     return stat.Size(), nil
 }
+
+const idSize = 31
 func (f *Filecab) saveOrder(record map[string]string, file *os.File) error {
     parts := strings.Split(record["id"], "/"+recordsName+"/")
     localRecordId := parts[len(parts) - 1]
-    if len(localRecordId) < 63 {
+    if len(localRecordId) < idSize {
         localRecordId = localRecordId + strings.Repeat("_", 63-len(localRecordId)) 
     }
     if _, err := file.Write([]byte(localRecordId + "\n")); err != nil {
@@ -179,7 +220,43 @@ const singleFileHistory = true
 const linkedList = false
 // const linkedList = true
 
-const recordsName = "records"
+// write a function in Go to represent a number as base 60 with the following characters
+var timeEncoding = [61]string{
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", 
+    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", 
+    "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", 
+    "u", "v", "x", "y", "z", "A", "B", "C", "D", "E", 
+    "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", 
+    "P", "Q", "R", "S", "T", "U", "B", "W", "X", "Y", 
+    "Z",
+}
+func toBase60(n int) string {
+	if n == 0 {
+		return timeEncoding[0]
+	}
+	var result string
+	for n > 0 {
+		remainder := n % 60
+		result = timeEncoding[remainder] + result
+		n /= 60
+	}
+	return result
+}
+
+func encodeDate(t time.Time) string {
+    // 11 chars with slash
+    year := strconv.Itoa(t.Year())
+    month := int(t.Month())
+    day := t.Day()
+    hour := t.Hour()
+    minute := t.Minute()
+    second := t.Second()
+    frame := t.Nanosecond() / 16666667
+    return year + timeEncoding[month] + timeEncoding[day] + "/" + timeEncoding[hour] + timeEncoding[minute] + timeEncoding[second] + timeEncoding[frame]
+}
+
+
+const recordsName = "R"
 // const recordsName = "records"
 func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     // if !doLog {
@@ -189,8 +266,11 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     var originalID = ""
     if strings.HasSuffix(record["id"], "/") {
         originalID = record["id"]
+        // localRecordId := now.Format("2006_01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        // localRecordId := now.Format("20060102/150405") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
         now := time.Now()
-        localRecordId := now.Format("2006_01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        localRecordId := encodeDate(now) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        //               11             1     6                    1     32
         record["id"] += recordsName + "/" + localRecordId
         // record["id"] += recordsName + "/" + generateUniqueID() + "_" + nameize(record["name"])
         isNew = true
@@ -251,11 +331,13 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                 if err != nil {
                     return err
                 }
+                f.BroadcastForFile(metaFiles.RecordHistPath)
                 // todo: wrangle the version
                 errChCount++
                 go func() {
                     size, err := f.saveHistory(record, serializedBytes, metaFiles.ParentHist)
                     _ = size
+                    f.BroadcastForFile(metaFiles.ParentHistPath)
                     errCh <- err
                 }()
                 errChCount++
@@ -389,12 +471,14 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                 go func() {
                     size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
                     _ = size
+                    f.BroadcastForFile(metaFiles.RecordHistPath)
                     errCh <- err
                 }()
                 errChCount++
                 go func() {
                     size, err := f.saveHistory(record, serializedBytes, metaFiles.ParentHist)
                     _ = size
+                    f.BroadcastForFile(metaFiles.ParentHistPath)
                     errCh <- err
                 }()
             } else {
@@ -567,26 +651,93 @@ func (f *Filecab) Load3(thePath string) ([]map[string]string, error) {
     return records, nil
 }
 
+func (f *Filecab) InitWaitFile(absolutePath string) *sync.Cond {
+    c, ok := f.conds[absolutePath]
+    if !ok {
+        c = sync.NewCond(&f.mu)
+        f.conds[absolutePath] = c
+        f.condCounts[absolutePath] = 0
+    }
+    f.condCounts[absolutePath] += 1
+    return c
+}
+
+func (f *Filecab) BroadcastForFile(absolutePath string) {
+    fmt.Println("broadcasting for:", absolutePath, "#lime")
+    c, ok := f.conds[absolutePath]
+    if !ok {
+        return
+    }
+    c.Broadcast()
+}
+
+func (f *Filecab) DoneWaitingForFile(absolutePath string) {
+    _, ok := f.conds[absolutePath]
+    if ok {
+        f.condCounts[absolutePath] -= 1
+        if (f.condCounts[absolutePath] == 0) {
+            delete(f.conds, absolutePath)
+            delete(f.condCounts, absolutePath)
+        }
+    }
+}
+
+
 // TODO: max
-func (f *Filecab) LoadHistorySince(thePath string, startOffset int) ([]map[string]string, int, error) {
-    f.mu.RLock()
-    defer f.mu.RUnlock()
+func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOffset int, doWait bool) ([]map[string]string, int, error) {
+    f.mu.Lock() // using lock and unlock cuz of Cond
+    defer f.mu.Unlock()
     historyPath := f.RootDir + "/" + thePath + "/history.txt"
+    var waitErr error
+    var rawBytes []byte
     
+    // see the pattern here: https://pkg.go.dev/context#example-AfterFunc-Cond
+    stopF := context.AfterFunc(ctx, func () {
+        // should I explicitly make it the mutex from c
+        f.mu.Lock() // using lock and unlock cuz of Cond
+        defer f.mu.Unlock()
+        fmt.Println("stopped", historyPath, "#deepskyblue")
+        f.BroadcastForFile(historyPath)
+    })
+    defer stopF()
     
-    file, err := os.Open(historyPath)
-    if err != nil {
-        return nil, 0, err
+    c := f.InitWaitFile(historyPath)
+    for {
+        file, err := os.Open(historyPath)
+        if err != nil {
+            return nil, 0, err
+        }
+        defer file.Close()
+        _, err = file.Seek(int64(startOffset), 0)
+        if err != nil {
+            return nil, 0, err
+        }
+        rawBytes, err = io.ReadAll(file)
+        if err != nil {
+            return nil, 0, err
+        }
+        
+        if len(rawBytes) > 0 {
+            break
+        }
+        if !doWait {
+            break
+        } else {
+            fmt.Println("waiting for:", historyPath, "#orangered")
+            c.Wait()
+            if ctx.Err() != nil {
+                waitErr = ctx.Err()
+                break
+            }
+        }
     }
-    defer file.Close()
-    _, err = file.Seek(int64(startOffset), 0)
-    if err != nil {
-        return nil, 0, err
-    }
-    rawBytes, err := io.ReadAll(file)
-    if err != nil {
-        return nil, 0, err
-    }
+    f.DoneWaitingForFile(historyPath)
+    
+    // just flow like normal
+    _ = waitErr
+    // if waitErr != nil {
+    //     return []map[string]string{}, 0, waitErr
+    // }
     
     rawRecords := bytes.Split(rawBytes, []byte("\n\n"))
     // remove trailing \n\n
@@ -631,10 +782,11 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
         if err != nil {
             hSizeChan <- "-1"
             // return nil, err
+        } else {
+            historySize := int(fileInfo.Size())
+            historySizeString := strconv.Itoa(historySize)
+            hSizeChan <- historySizeString
         }
-        historySize := int(fileInfo.Size())
-        historySizeString := strconv.Itoa(historySize)
-        hSizeChan <- historySizeString
     }()
 
     // fixed size local ids
@@ -718,24 +870,23 @@ func (f *Filecab) LoadRange(thePath string, offset, limit int64) ([]map[string]s
         return nil, err
     }
     defer file.Close()
-    const itemSize = 63 // todo: make 63
     const newlineSize = 1
     var startPos int64
     if offset < 0 {
-        totalOffset := offset * (itemSize + newlineSize)
+        totalOffset := offset * (idSize + newlineSize)
         startPos, err = file.Seek(totalOffset, os.SEEK_END)
         if err != nil {
             return nil, err
         }
     } else {
-        startPos = offset * (itemSize + newlineSize)
+        startPos = offset * (idSize + newlineSize)
         _, err = file.Seek(startPos, os.SEEK_SET)
         if err != nil {
             return nil, err
         }
     }
 
-    chunkSize := limit * (itemSize + newlineSize) - newlineSize
+    chunkSize := limit * (idSize + newlineSize) - newlineSize
     buffer := make([]byte, chunkSize)
     n, err := file.Read(buffer)
     if err != nil && err != io.EOF {
@@ -855,28 +1006,15 @@ func nameize(s string) string {
         s = "r"
     }
     processed := nameRE.ReplaceAllString(s, "_")
-    if len(processed) > 32 {
-        processed = processed[:32]
+    if len(processed) > 15 {
+        processed = processed[:15]
     }
     processed = strings.ToLower(processed)
     processed = strings.TrimRight(processed, "_")
-    // if len(processed) < 32 {
-    //     processed = processed + strings.Repeat("_", 32-len(processed)) 
-    // }
     return processed
 }
 
 
-func New(rootDir string) *Filecab {
-    if rootDir == "/" {
-        panic("Root directory cannot be '/'")
-    }
-    return &Filecab{
-        RootDir: rootDir,
-        // cachedDir: map[string]bool{},
-        openFiles: map[string]*os.File{},
-    }
-}
 
 
 func serializeRecord(obj map[string]string) string {
@@ -1016,11 +1154,17 @@ func deserializeRecordBytes(data []byte) map[string]string {
 
 
 
+func padString(s string, size int) string {
+    for len(s) < size {
+        s = "0" + s
+    }
+    return s
+}
 
 var counter int
 func generateUniqueID() string {
-    counter = (counter + 1) % 1000000
-    return fmt.Sprintf("%06d", counter)
+    counter = (counter + 1) % 216000 // 60 ^ 3
+    return padString(toBase60(counter), 3)
 }
 
 func generateUniqueID_old() string {
@@ -1065,6 +1209,3 @@ func readFileInChunksBackwards(filePath string, offset int64, chunkSize int64) (
 	return result, nil
 }
 
-func Yo() string {
-    return "yo"
-}
