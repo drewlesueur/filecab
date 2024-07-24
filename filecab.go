@@ -205,7 +205,7 @@ func (f *Filecab) saveOrder(record map[string]string, file *os.File) error {
     parts := strings.Split(record["id"], "/"+recordsName+"/")
     localRecordId := parts[len(parts) - 1]
     if len(localRecordId) < idSize {
-        localRecordId = localRecordId + strings.Repeat("_", 63-len(localRecordId)) 
+        localRecordId = localRecordId + strings.Repeat("_", idSize-len(localRecordId)) 
     }
     if _, err := file.Write([]byte(localRecordId + "\n")); err != nil {
         return err
