@@ -1,5 +1,6 @@
 package filecab
 
+// TODO; cache of most recently updated files
 
 import (
     "sync"
@@ -7,7 +8,6 @@ import (
     "strconv"
     "sort"
     "time"
-    "fmt"
     "io"
     "math/rand"
     "encoding/hex"
@@ -15,7 +15,6 @@ import (
     "regexp"
     "os"
     "bytes"
-    "path/filepath"
 	"compress/gzip"
 )
 
@@ -58,18 +57,6 @@ func New(rootDir string) *Filecab {
     
 }
 
-// func (f *Filecab) CondTimer() {
-//     ticker := time.NewTicker(2 * time.Second)
-//     go func() {
-//         for range ticker.C {
-//             f.mu.RLock()
-//             for _, cond := range f.conds {
-//                 cond.Broadcast()
-//             }
-//             f.mu.RUnlock()
-//         }
-//     }()
-// }
 
 // update this code to also add a prev symmlink to the previous record
 // to make a doubly linked list basically
@@ -180,12 +167,6 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, includeOrder bool
 
 }
 
-// func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, file *os.File) error {
-//     if _, err := file.Write(serializedBytes); err != nil {
-//         return err
-//     }
-//     return nil
-// }
 
 func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, file *os.File) (int64, error) {
     if _, err := file.Write(serializedBytes); err != nil {
@@ -375,73 +356,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
 
         linkedList := false 
         if linkedList {
-            lastPath := f.RootDir + "/" + originalID + "last"
-            _, err = os.Stat(lastPath);
-            if os.IsNotExist(err) {
-                // err = os.Symlink(fullDir, lastPath)
-                err = os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), lastPath)
-                if err != nil {
-                    return err
-                }
-                firstPath := f.RootDir + "/" + originalID + "first"
-                // err = os.Symlink(fullDir, firstPath)
-                err = os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), firstPath)
-                if err != nil {
-                    return err
-                }
-                
-                // lengthPath := f.RootDir + "/" + originalID + "length"
-                // err = os.WriteFile(lengthPath, []byte("1"), 0644)
-                // if err != nil {
-                //     return err
-                // }
-                // versionPath := f.RootDir + "/" + originalID + "version"
-                // err = os.WriteFile(lengthPath, []byte("1"), 0644)
-                // if err != nil {
-                //     return err
-                // }
-            } else if err == nil {
-                prevLastDir, err := os.Readlink(lastPath)
-                // fmt.Println("reading link:", prevLastDir)
-                if err != nil {
-                    return err
-                }
-                // "next" part
-                errChCount++
-                go func() {
-                    nextPath := f.RootDir + "/" + originalID + prevLastDir[2:] + "/next"
-                    errCh <- os.Symlink("../../../" + strings.TrimPrefix(record["id"], originalID), nextPath)
-                    // errCh <- os.Symlink(fullDir, nextPath)
-                }()
-                // "prev" part
-                errChCount++
-                go func() {
-                    prevPath := fullDir + "/prev"
-                    errCh <- os.Symlink("../../../" + strings.TrimPrefix(prevLastDir[2:], originalID), prevPath)
-                }()
-                // "last" part including removing and renaming
-                errChCount += 2
-                go func() {
-                    if err := os.Remove(lastPath); err != nil && !os.IsNotExist(err) {
-                        errCh <- err
-                        errCh <- nil
-                        return
-                    }
-                    errCh <- nil
-                    errCh <- os.Symlink("./" + strings.TrimPrefix(record["id"], originalID), lastPath)
-                }()
-        
-                // slower barely
-                // newSymlink := lastPath + ".new"
-                // if err := os.Symlink(fullDir, newSymlink); err != nil {
-                //     return err
-                // }
-                // if err := os.Rename(newSymlink, lastPath); err != nil {
-                //     return err
-                // }
-            } else {
-                return err
-            }
+            // linked list section 1
         }
         
         
@@ -547,111 +462,6 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
 }
 
 
-
-
-
-// implement the load function that loads all to a map[string]string
-// thePath will be the id prefix and it will start at "first"
-// and go along the linked list until there is no "next"
-func (f *Filecab) Load(thePath string) ([]map[string]string, error) {
-    f.mu.RLock()
-    defer f.mu.RUnlock()
-    // lengthPath := f.RootDir + "/" + thePath + "/length"
-    // existingLengthData, err := os.ReadFile(lengthPath)
-    // if err != nil {
-    //     return nil, err
-    // }
-    // existingLength, err := strconv.Atoi(string(existingLengthData))
-    // if err != nil {
-    //     return nil, err
-    // }
-    
-    
-    var records []map[string]string
-    // var records = make([]map[string]string, existingLength)
-    recordDir := f.RootDir + "/" + thePath + "/first"
-    i := -1
-    for {
-        i++
-        recordFile := recordDir + "/record.txt"
-        data, err := os.ReadFile(recordFile)
-        if err != nil {
-            return nil, err
-        }
-        record := deserializeRecordBytes(data)
-        records = append(records, record)
-        // records[i] = record
-        nextLink := recordDir + "/next"
-        if _, err := os.Lstat(nextLink); os.IsNotExist(err) {
-            break
-        } else if err != nil {
-            return nil, err
-        } else {
-            nextPath, err := os.Readlink(nextLink)
-            if err != nil {
-                return nil, err
-            }
-            recordDir = nextPath
-        }
-    }
-    return records, nil
-}
-
-// Deprecated, uses symlink method
-func (f *Filecab) Load3(thePath string) ([]map[string]string, error) {
-    f.mu.RLock()
-    defer f.mu.RUnlock()
-    var paths []string
-    recordDir := f.RootDir + "/" + thePath + "/first"
-    for {
-        paths = append(paths, recordDir)
-        nextLink := recordDir + "/next"
-        if _, err := os.Lstat(nextLink); os.IsNotExist(err) {
-            break
-        } else if err != nil {
-            return nil, err
-        } else {
-            nextPath, err := os.Readlink(nextLink)
-            if err != nil {
-                return nil, err
-            }
-            // recordDir = nextPath
-            recordDir = f.RootDir + "/" + thePath + "/" + nextPath[9:]
-            // fmt.Println()
-        }
-    }
-    
-    var maxConcurrency = 100
-    var ch = make(chan int, maxConcurrency)
-    var records = make([]map[string]string, len(paths))
-    errCh := make(chan error, len(paths))
-    for i, path := range paths {
-        i := i
-        ch <- 1
-        go func(path string) {
-            defer func() {
-                <- ch
-            }()
-            recordFile := path + "/record.txt"
-            data, err := os.ReadFile(recordFile)
-            if err != nil {
-                errCh <- err
-                return
-            }
-            record := deserializeRecordBytes(data)
-            records[i] = record
-        }(path)
-    }
-    for i := 0; i < maxConcurrency; i++ {
-        ch <- 1
-    }
-    close(errCh)
-    if len(errCh) > 0 {
-        return nil, <-errCh
-    }
-    return records, nil
-}
-
 func (f *Filecab) InitWaitFile(absolutePath string) *sync.Cond {
     c, ok := f.conds[absolutePath]
     if !ok {
@@ -703,12 +513,12 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     defer stopF()
     
     c := f.InitWaitFile(historyPath)
+    file, err := os.Open(historyPath)
+    if err != nil {
+        return nil, 0, err
+    }
+    defer file.Close()
     for {
-        file, err := os.Open(historyPath)
-        if err != nil {
-            return nil, 0, err
-        }
-        defer file.Close()
         _, err = file.Seek(int64(startOffset), 0)
         if err != nil {
             return nil, 0, err
@@ -943,57 +753,6 @@ func (f *Filecab) LoadRange(thePath string, offset, limit int64) ([]map[string]s
 }
 
 
-
-
-
-// todo: keep history file open...
-
-func (f *Filecab) Load2(thePath string) ([]map[string]string, error) {
-    f.mu.RLock()
-    defer f.mu.RUnlock()
-    var records []map[string]string
-    theDir := f.RootDir + "/" + thePath
-    fmt.Println("Loading:", theDir)
-    
-    var maxConcurrency = 1000
-    ch := make(chan int, maxConcurrency)
-    var mu sync.Mutex
-    err := filepath.Walk(theDir, func(path string, info os.FileInfo, err error) error {
-        if err != nil {
-            return err
-        }
-        ch <- 1
-        go func() {
-            defer func() { <-ch }()
-            // if info.IsDir() && strings.Count(path[len(theDir):], string(os.PathSeparator)) > 3 {
-            //     return filepath.SkipDir
-            // }
-            if !info.IsDir() && info.Name() == "record.txt"  {
-                data, err := os.ReadFile(path)
-                if err != nil {
-                    // return err
-                }
-                record := deserializeRecordBytes(data)
-                mu.Lock()
-                records = append(records, record)
-                mu.Unlock()
-            }
-        }()
-        return nil
-    })
-    if err != nil {
-        return nil, err
-    }
-    for i := 0; i < maxConcurrency; i++ {
-        ch <- 1
-    }
-    sort.Slice(records, func(i, j int) bool {
-        return records[i]["id"] < records[j]["id"]
-    })
-    return records, nil
-}
-
-
 // function in Go to replace all non alphanumeric with underscore
 // and then truncate to at most 32 chars
 var nameRE *regexp.Regexp
@@ -1209,4 +968,7 @@ func readFileInChunksBackwards(filePath string, offset int64, chunkSize int64) (
 	}
 	return result, nil
 }
+
+
+
 
