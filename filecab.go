@@ -202,15 +202,17 @@ const linkedList = false
 // const linkedList = true
 
 // write a function in Go to represent a number as base 60 with the following characters
-var timeEncoding = [61]string{
+var timeEncoding = [62]string{
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", 
-    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", 
-    "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", 
-    "u", "v", "x", "y", "z", "A", "B", "C", "D", "E", 
-    "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", 
-    "P", "Q", "R", "S", "T", "U", "B", "W", "X", "Y", 
-    "Z",
+    "A", "a", "B", "b", "C", "c", "D", "d", "E", "e", 
+    "F", "f", "G", "g", "H", "h", "I", "i", "J", "j", 
+    "K", "k", "L", "l", "M", "m", "N", "n", "O", "o", 
+    "P", "p", "Q", "q", "R", "r", "S", "s", "T", "t", 
+    "U", "u", "V", "v", "W", "w", "X", "x", "Y", "y",
+    // zs get left out
+    "Z", "z",
 }
+
 func toBase60(n int) string {
 	if n == 0 {
 		return timeEncoding[0]
