@@ -19,7 +19,9 @@ import (
 )
 
 
-      
+// get length
+// most recently updated.
+
 // created and updated are in log?
 // user as well
 // id is the full path
@@ -235,16 +237,16 @@ func encodeDate(t time.Time) string {
     minute := t.Minute()
     second := t.Second()
     frame := t.Nanosecond() / 16666667
-    return year + timeEncoding[month] + timeEncoding[day] + "/" + timeEncoding[hour] + timeEncoding[minute] + timeEncoding[second] + timeEncoding[frame]
+    // return year + timeEncoding[month] + timeEncoding[day] + "/" + timeEncoding[hour] + timeEncoding[minute] + timeEncoding[second] + timeEncoding[frame]
+    return year + timeEncoding[month] + timeEncoding[day] + "_" + timeEncoding[hour] + timeEncoding[minute] + timeEncoding[second] + timeEncoding[frame]
 }
 
 
 const recordsName = "R"
 // const recordsName = "records"
-func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
-    // if !doLog {
-    //     return nil
-    // }
+
+
+func processID(record map[string]string) (bool, string) {
     isNew := false
     var originalID = ""
     if strings.HasSuffix(record["id"], "/") {
@@ -258,8 +260,31 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         // record["id"] += recordsName + "/" + generateUniqueID() + "_" + nameize(record["name"])
         isNew = true
     }
-    
     record["id"] = strings.ReplaceAll(record["id"], "..", "")
+    return isNew, originalID
+}
+
+
+
+// func (f *Filecab) SaveQueue(record map[string]string) error {
+//     isNew, originalID := processID(record)
+//     fullDir := f.RootDir + "/" + record["id"]
+//     queuePath := fullDir + "/" + "queue.txt"
+// 
+//     queueLength, err := os.Stat(queuePath)
+//     if err != nil {
+//         return nil
+//     }
+//     length := queueLength.Size()
+// }
+
+
+func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
+    // if !doLog {
+    //     return nil
+    // }
+    isNew, originalID := processID(record)
+    
     fullDir := f.RootDir + "/" + record["id"]
     filePath := fullDir + "/" + "record.txt"
     
@@ -748,6 +773,9 @@ func (f *Filecab) LoadRange(thePath string, offset, limit int64) ([]map[string]s
     if len(errCh) > 0 {
         return nil, <-errCh
     }
+    
+    // todo: maybe another return value for collection offset
+    // cuz what if the first one gets filtered out
     if len(records) > 0 {
         records[0]["collection_offset"] = historySizeString
     }
