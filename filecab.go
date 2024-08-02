@@ -15,6 +15,7 @@ import (
     "regexp"
     "os"
     "bytes"
+    "fmt"
 	"compress/gzip"
 )
 
@@ -40,6 +41,8 @@ type Filecab struct {
     openFiles map[string]*os.File
     conds map[string]*sync.Cond
     condCounts map[string]int
+    ShouldSaveHistory bool
+    OnlyParentHistory bool
 }
 
 func New(rootDir string) *Filecab {
@@ -52,6 +55,7 @@ func New(rootDir string) *Filecab {
         openFiles: map[string]*os.File{},
         conds: map[string]*sync.Cond{},
         condCounts: map[string]int{},
+        ShouldSaveHistory: true,
     }
     // f.CondTimer()
     return f
@@ -68,6 +72,11 @@ func (f *Filecab) Save(record map[string]string) error {
     return f.saveInternal(true, record)
 }
 
+func (f *Filecab) MustSave(record map[string]string) {
+    if err := f.Save(record); err != nil {
+        panic(err)
+    }
+}
 
 func (f *Filecab) openFile(filePath string, keepOpen map[string]bool) (*os.File, error) {
     file, ok := f.openFiles[filePath]
@@ -143,6 +152,7 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, includeOrder bool
         recordOrder = f.RootDir + "/" + parentId + "/order.txt"
         keepOpen[recordOrder] = true
     }
+    
     recordHistFile, err := f.openFile(recordHist, keepOpen)
     if err != nil {
         return nil, err
@@ -215,6 +225,21 @@ var timeEncoding = [62]string{
     "Z", "z",
 }
 
+var timeEncoding2 = [36]string{
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", 
+    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", 
+    "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", 
+    "u", "v", "w", "x", "y", "z",
+}
+
+// simple way to compress time only using 0-9, a-z
+// time is yyyy-mm-dd hh-mm-ss.mmm
+
+
+
+
+
+
 func toBase60(n int) string {
 	if n == 0 {
 		return timeEncoding[0]
@@ -228,18 +253,56 @@ func toBase60(n int) string {
 	return result
 }
 
+func toBase36(n int, padding int) string {
+	if n == 0 {
+		return timeEncoding2[0]
+	}
+	var result string
+	for n > 0 {
+		remainder := n % 36
+		result = timeEncoding2[remainder] + result
+		n /= 36
+	}
+	for len(result) < padding {
+		result = "0" + result
+	}
+	return result
+}
+
 func encodeDate(t time.Time) string {
     // 11 chars with slash
-    year := strconv.Itoa(t.Year())
+    year := t.Year()
+    yearStr := strconv.Itoa(year)
     month := int(t.Month())
     day := t.Day()
     hour := t.Hour()
     minute := t.Minute()
     second := t.Second()
     frame := t.Nanosecond() / 16666667
-    // return year + timeEncoding[month] + timeEncoding[day] + "/" + timeEncoding[hour] + timeEncoding[minute] + timeEncoding[second] + timeEncoding[frame]
-    return year + timeEncoding[month] + timeEncoding[day] + "_" + timeEncoding[hour] + timeEncoding[minute] + timeEncoding[second] + timeEncoding[frame]
+    // millisecond := t.Nanosecond() / 1000000
+    // instead of using time encoding, just use a 0 padded 2 digit number  (Golang)
+    return yearStr + timeEncoding[month] + timeEncoding[day] + "_" + timeEncoding[hour] + timeEncoding[minute] + timeEncoding[second] + timeEncoding[frame]
+    
 }
+func encodeDate2(t time.Time) string {
+    year := t.Year()
+    month := int(t.Month())
+    day := t.Day()
+    hour := t.Hour()
+    minute := t.Minute()
+    second := t.Second()
+    
+    // minSec := minute * second
+    // minSec1 = int(minSec / 100)
+    // minSec2 = minSec - (minSec1 * 100)
+    // min * second is 3600 sowe could encode that in 3 chars 0-35 as one, then last 2 base 10 digits
+
+    return toBase36(year - 2020, 2) + toBase36(month, 1) + toBase36(day, 1) + toBase36(hour, 1) + padString(strconv.Itoa(minute), 2) + padString(strconv.Itoa(second), 2)
+    // YYmd_Hmmss
+    
+}
+
+
 
 
 const recordsName = "R"
@@ -254,8 +317,15 @@ func processID(record map[string]string) (bool, string) {
         // localRecordId := now.Format("2006_01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
         // localRecordId := now.Format("20060102/150405") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
         now := time.Now()
-        localRecordId := encodeDate(now) + "_" + generateUniqueID() + "_" + nameize(record["name"])
-        //               11             1     6                    1     32
+        // localRecordId := encodeDate(now) + "_" + generateUniqueID() + "_" + nameize(record["name"])
+        //               11                1     3                    1     16
+        var localRecordId string
+        if record["unique_key"] == "" {
+            localRecordId = encodeDate2(now) + "_" + generateUniqueID2() + "_" + nameize(record["name"])
+            //              10                  1    5                    1     16
+        } else {
+            localRecordId = record["unique_key"]
+        }
         record["id"] += recordsName + "/" + localRecordId
         // record["id"] += recordsName + "/" + generateUniqueID() + "_" + nameize(record["name"])
         isNew = true
@@ -287,6 +357,11 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     
     fullDir := f.RootDir + "/" + record["id"]
     filePath := fullDir + "/" + "record.txt"
+    // fmt.Println("full dir #yellow", fullDir)
+    err := os.MkdirAll(fullDir, os.ModePerm)
+    if err != nil {
+        return err
+    }
     
     if isNew {
         // fmt.Println("creating", record["id"], "with", len(record), "fields")
@@ -297,11 +372,11 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         }
         serializedBytes := serializeRecordToBytes(record)
 
-        var err error
-        err = os.MkdirAll(fullDir, os.ModePerm)
-        if err != nil {
-            return err
-        }
+        // var err error
+        // err = os.MkdirAll(fullDir, os.ModePerm)
+        // if err != nil {
+        //     return err
+        // }
         errCh := make(chan error, 12)
         var errChCount = 0
 
@@ -322,7 +397,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         //     errCh <- f.saveOrder(record)
         // }()
 
-        if doLog {
+        if doLog && f.ShouldSaveHistory {
             if singleFileHistory {
                 metaFiles, err := f.MetaFilesForRecord(record, true)
                 if err != nil {
@@ -393,6 +468,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
             }
         }
     } else {
+        // panic("update")
         // update:
 
         // fmt.Println("updating", record["id"], "with", len(record), "fields")
@@ -402,7 +478,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         
         errCh := make(chan error, 2)
         var errChCount = 0
-        if doLog {
+        if doLog && f.ShouldSaveHistory {
             if singleFileHistory {
                 serializedBytes := serializeRecordToBytes(record)
                 metaFiles, err := f.MetaFilesForRecord(record, false)
@@ -457,8 +533,17 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         }
         existingData, err := os.ReadFile(filePath)
         if err != nil {
-            return err
+            // if strings.Contains(err.Error(), "no such file or directory") {
+            //     _, err := os.Create(filePath)
+            //     if err != nil {
+            //         return err
+            //     }
+            // } else {
+                return fmt.Errorf("no findy: %v", err)
+            // }
         }
+
+
         existingRecord := deserializeRecordBytes(existingData)
         for k, v := range record {
             if len(k) >= 2 {
@@ -596,6 +681,8 @@ func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
     if err != nil {
         return nil, err
     }
+    
+    
     historyPath := f.RootDir + "/" + thePath + "/history.txt"
     fileInfo, err := os.Stat(historyPath)
     if err != nil {
@@ -604,7 +691,16 @@ func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
     historySize := int(fileInfo.Size())
     record := deserializeRecordBytes(data)
     record["history_offset"] = strconv.Itoa(historySize)
-    return deserializeRecordBytes(data), nil
+    
+    return record, nil
+}
+
+func (f *Filecab) MustLoadAll(thePath string) []map[string]string {
+    result, err := f.LoadAll(thePath)
+    if err != nil {
+        panic(err)
+    }
+    return result
 }
 
 
@@ -672,7 +768,39 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     return records, nil
 }
 
-func (f *Filecab) LoadRange(thePath string, offset, limit int64) ([]map[string]string, error) {
+func convertToInt64(value any) (int64, error) {
+    switch v := value.(type) {
+    case int:
+        return int64(v), nil
+    case int64:
+        return v, nil
+    case string:
+        var parseErr error
+        var intValue int64
+        intValue, parseErr = strconv.ParseInt(v, 10, 64)
+        if parseErr != nil {
+            return 0, parseErr
+        }
+        return intValue, nil
+    default:
+        return 0, fmt.Errorf("unsupported type: %T", value)
+    }
+}
+// make a "Must" version of this
+func (f *Filecab) MustLoadRange(thePath string, offset, limit any) []map[string]string {
+    result, err := f.LoadRange(thePath, offset, limit)
+    if err != nil {
+        panic(err)
+    }
+    return result
+}
+
+
+
+func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[string]string, error) {
+    offset, _ := convertToInt64(offsetAny)
+    limit, _ := convertToInt64(limitAny)
+    
     f.mu.RLock()
     defer f.mu.RUnlock()
     // you could make this part concurrent
@@ -942,8 +1070,6 @@ func deserializeRecordBytes(data []byte) map[string]string {
     return result
 }
 
-
-
 func padString(s string, size int) string {
     for len(s) < size {
         s = "0" + s
@@ -951,10 +1077,17 @@ func padString(s string, size int) string {
     return s
 }
 
+
+
 var counter int
 func generateUniqueID() string {
     counter = (counter + 1) % 216000 // 60 ^ 3
     return padString(toBase60(counter), 3)
+}
+
+func generateUniqueID2() string {
+    counter = (counter + 1) % (36 * 36 * 36 * 36 * 36) 
+    return toBase36(counter, 5)
 }
 
 func generateUniqueID_old() string {
