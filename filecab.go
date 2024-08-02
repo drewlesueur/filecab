@@ -321,15 +321,15 @@ func encodeDate2(t time.Time) string {
 
 
 
-const recordsName = "R"
+const recordsName = "r"
 // const recordsName = "records"
 
 
 func processID(record map[string]string) (bool, string) {
     isNew := false
-    var originalID = ""
+    var location string
     if strings.HasSuffix(record["id"], "/") {
-        originalID = record["id"]
+        location = record["id"]
         // localRecordId := now.Format("2006_01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
         // localRecordId := now.Format("20060102/150405") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
         now := time.Now()
@@ -347,7 +347,7 @@ func processID(record map[string]string) (bool, string) {
         isNew = true
     }
     record["id"] = strings.ReplaceAll(record["id"], "..", "")
-    return isNew, originalID
+    return isNew, location
 }
 
 
@@ -366,7 +366,7 @@ func processID(record map[string]string) (bool, string) {
 
 
 func (f *Filecab) saveInternal(record map[string]string, options *Options) error {
-    isNew, originalID := processID(record)
+    isNew, location := processID(record)
     
     fullDir := f.RootDir + "/" + record["id"]
     filePath := fullDir + "/" + "record.txt"
@@ -389,7 +389,7 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
             }
         } else {
             var err error
-            err = os.MkdirAll( f.RootDir + "/" + originalID, os.ModePerm)
+            err = os.MkdirAll( f.RootDir + "/" + location, os.ModePerm)
             if err != nil {
                 return err
             }
@@ -397,24 +397,13 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
         errCh := make(chan error, 12)
         var errChCount = 0
 
-        if record["override_symlink"] == "" {
-            if !options.HistoryOnly {
-                errChCount++
-                go func() {
-                    err := os.WriteFile(filePath, serializedBytes, 0644)
-                    errCh <- err
-                }()
-            }
-        } else {
+        if !options.HistoryOnly {
             errChCount++
             go func() {
-                errCh <- os.Symlink(record["override_symlink"], filePath)
+                err := os.WriteFile(filePath, serializedBytes, 0644)
+                errCh <- err
             }()
         }
-        // errChCount++
-        // go func() {
-        //     errCh <- f.saveOrder(record)
-        // }()
 
         if !options.NoHistory {
             if singleFileHistory {
@@ -451,32 +440,6 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
                         errCh <- f.saveOrder(record, metaFiles.ParentOrder)
                     }()
                 }
-            } else {
-                errChCount += 2
-                go func() {
-                    hr := map[string]string{}
-                    for k, v := range record {
-                        hr[k] = v
-                    }
-
-                    theIdBefore := hr["id"]
-                    hr["id"] += "/history/"
-                    hr["non_history_id"] = theIdBefore
-                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
-                    historyId := hr["id"]
-                    // note that saveInternal updates the id
-                    // some of the processing could be improved by using localRecordId instead of trimming, splitting?
-                    // save up one level only
-                    parts := strings.Split(theIdBefore, "/"+recordsName+"/")
-                    parts = parts[0:len(parts)-1]
-
-                    hr = map[string]string{}
-                    hr["id"] = strings.Join(parts, "/"+recordsName+"/") + "/history/"
-                    // hr["override_symlink"] = historyId + "/record.txt"
-                    hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, originalID) + "/record.txt"
-                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
-                    // errCh <- nil
-                }()
             }
         }
 
@@ -525,36 +488,6 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
                     _ = size
                     f.BroadcastForFile(metaFiles.ParentHistPath)
                     errCh <- err
-                }()
-            } else {
-                errChCount += 2
-                go func() {
-                    // fmt.Println("history for update", "_coral")
-                    hr := map[string]string{}
-                    for k, v := range record {
-                        hr[k] = v
-                    }
-
-                    theIdBefore := hr["id"]
-                    hr["id"] += "/history/"
-                    hr["non_history_id"] = theIdBefore
-                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
-                    historyId := hr["id"]
-                    // note that saveInternal updates the id
-
-                    // some of the processing could be improved by using localRecordId instead of trimming, splitting?
-                    // save up one level only
-                    parts := strings.Split(theIdBefore, "/"+recordsName+"/")
-                    parts = parts[0:len(parts)-1]
-
-                    hr = map[string]string{}
-                    hr["id"] = strings.Join(parts, "/"+recordsName+"/") + "/history/"
-                    // hr["override_symlink"] = historyId + "/record.txt"
-                    // hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, originalID) + "/record.txt"
-                    hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, strings.Join(parts, "/"+recordsName+"/") + "/") + "/record.txt"
-                    // fmt.Println("saving update", hr["override_symlink"], "_coral")
-                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
-                    // errCh <- nil
                 }()
             }
         }
