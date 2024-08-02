@@ -41,8 +41,6 @@ type Filecab struct {
     openFiles map[string]*os.File
     conds map[string]*sync.Cond
     condCounts map[string]int
-    ShouldSaveHistory bool
-    OnlyParentHistory bool
 }
 
 func New(rootDir string) *Filecab {
@@ -55,7 +53,6 @@ func New(rootDir string) *Filecab {
         openFiles: map[string]*os.File{},
         conds: map[string]*sync.Cond{},
         condCounts: map[string]int{},
-        ShouldSaveHistory: true,
     }
     // f.CondTimer()
     return f
@@ -66,14 +63,51 @@ func New(rootDir string) *Filecab {
 
 // update this code to also add a prev symmlink to the previous record
 // to make a doubly linked list basically
-func (f *Filecab) Save(record map[string]string) error {
+func (f *Filecab) Save(record map[string]string, options *Options) error {
     f.mu.Lock()
     defer f.mu.Unlock()
-    return f.saveInternal(true, record)
+    if options == nil {
+        options = &Options{}
+    }
+    return f.saveInternal(record, options)
 }
 
-func (f *Filecab) MustSave(record map[string]string) {
-    if err := f.Save(record); err != nil {
+type Options struct {
+    HistoryOnly bool
+    NoHistory bool
+    IncludeOrder bool
+}
+
+func WithHistoryOnly(options *Options, historyOnly bool) *Options {
+    if options == nil {
+        return &Options{HistoryOnly: historyOnly}
+    }
+    newOptions := *options
+    newOptions.HistoryOnly = historyOnly
+    return &newOptions
+}
+
+func WithNoHistory(options *Options, noHistory bool) *Options {
+    if options == nil {
+        return &Options{NoHistory: noHistory}
+    }
+    newOptions := *options
+    newOptions.NoHistory = noHistory
+    return &newOptions
+}
+
+func WithIncludeOrder(options *Options, includeOrder bool) *Options {
+    if options == nil {
+        return &Options{IncludeOrder: includeOrder}
+    }
+    newOptions := *options
+    newOptions.IncludeOrder = includeOrder
+    return &newOptions
+}
+
+
+func (f *Filecab) MustSave(record map[string]string, options *Options) {
+    if err := f.Save(record, options); err != nil {
         panic(err)
     }
 }
@@ -108,35 +142,9 @@ type MetaFiles struct {
     ParentHistPath string
     ParentOrderPath string
 }
-// func (f *Filecab) MetaFilesForRecord(record map[string]string], includeOrder bool) (*ThreeFilesAndName, error) {
-//         parts := strings.Split(record["id"], "/"+recordsName+"/")
-//         parentId := strings.Join(parts[0:len(parts)-1], "/"+recordsName+"/")
-//         parentHist := f.RootDir + "/" + usedId + "/history.txt"
-//         recordHist := f.RootDir + "/" + record["id"] + "/history.txt"
-//         // localRecordId := parts[len(parts) - 1]
-//         recordOrder := f.RootDir + "/" + parentDir + "/order.txt"
-//         
-//         recordHistFile, err := f.openFile(recordHist)
-//         if err != nil {
-//             return nil, err
-//         }
-//         parentHistFile, err := f.openFile(parentHist)
-//         if err != nil {
-//             return nil, err
-//         }
-//         recordOrderFile, err := f.openFile(recordOrder)
-//         if err != nil {
-//             return nil, err
-//         }
-//         return &ThreeFilesAndName{
-//             RecordHist: recordHistFile,
-//             ParentHist: parentHistFile,
-//             ParentOrder: recordOrderFile,
-//         }, nil
-// }
 
 
-func (f *Filecab) MetaFilesForRecord(record map[string]string, includeOrder bool) (*MetaFiles, error) {
+func (f *Filecab) MetaFilesForRecord(record map[string]string, options *Options) (*MetaFiles, error) {
     parts := strings.Split(record["id"], "/"+recordsName+"/")
     parentId := strings.Join(parts[0:len(parts)-1], "/"+recordsName+"/")
     parentHist := f.RootDir + "/" + parentId + "/history.txt"
@@ -146,10 +154,10 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, includeOrder bool
         parentHist: true,
     }
     
-    if !f.OnlyParentHistory {
+    if !options.HistoryOnly {
         recordHist = f.RootDir + "/" + record["id"] + "/history.txt"
         keepOpen[recordHist] = true
-        if includeOrder {
+        if options.IncludeOrder {
             recordOrder = f.RootDir + "/" + parentId + "/order.txt"
             keepOpen[recordOrder] = true
         }
@@ -161,12 +169,12 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, includeOrder bool
     }
     
     var recordHistFile, recordOrderFile *os.File
-    if !f.OnlyParentHistory {
+    if !options.HistoryOnly {
         recordHistFile, err = f.openFile(recordHist, keepOpen)
         if err != nil {
             return nil, err
         }
-        if includeOrder {
+        if options.IncludeOrder {
             recordOrderFile, err = f.openFile(recordOrder, keepOpen)
             if err != nil {
                 return nil, err
@@ -357,10 +365,7 @@ func processID(record map[string]string) (bool, string) {
 // }
 
 
-func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
-    // if !doLog {
-    //     return nil
-    // }
+func (f *Filecab) saveInternal(record map[string]string, options *Options) error {
     isNew, originalID := processID(record)
     
     fullDir := f.RootDir + "/" + record["id"]
@@ -370,14 +375,13 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     if isNew {
         // fmt.Println("creating", record["id"], "with", len(record), "fields")
         timeStr := time.Now().Format(time.RFC3339Nano)
-        if doLog {
+        if !options.NoHistory {
             record["updated_at"] = timeStr
             record["created_at"] = timeStr
         }
         serializedBytes := serializeRecordToBytes(record)
 
-        if !f.OnlyParentHistory {
-        // if true || !f.OnlyParentHistory {
+        if !options.HistoryOnly {
             var err error
             err = os.MkdirAll(fullDir, os.ModePerm)
             if err != nil {
@@ -394,8 +398,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         var errChCount = 0
 
         if record["override_symlink"] == "" {
-            if !f.OnlyParentHistory {
-            // if true || !f.OnlyParentHistory {
+            if !options.HistoryOnly {
                 errChCount++
                 go func() {
                     err := os.WriteFile(filePath, serializedBytes, 0644)
@@ -413,13 +416,13 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         //     errCh <- f.saveOrder(record)
         // }()
 
-        if doLog && f.ShouldSaveHistory {
+        if !options.NoHistory {
             if singleFileHistory {
-                metaFiles, err := f.MetaFilesForRecord(record, true)
+                metaFiles, err := f.MetaFilesForRecord(record, WithIncludeOrder(options, true))
                 if err != nil {
                     return err
                 }
-                if !f.OnlyParentHistory {
+                if !options.HistoryOnly {
                     // errChCount++
                     // go func() {
                     //     size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
@@ -442,7 +445,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     errCh <- err
                 }()
 
-                if !f.OnlyParentHistory {
+                if !options.HistoryOnly {
                     errChCount++
                     go func() {
                         errCh <- f.saveOrder(record, metaFiles.ParentOrder)
@@ -459,7 +462,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     theIdBefore := hr["id"]
                     hr["id"] += "/history/"
                     hr["non_history_id"] = theIdBefore
-                    errCh <- f.saveInternal(false, hr)
+                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
                     historyId := hr["id"]
                     // note that saveInternal updates the id
                     // some of the processing could be improved by using localRecordId instead of trimming, splitting?
@@ -471,7 +474,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     hr["id"] = strings.Join(parts, "/"+recordsName+"/") + "/history/"
                     // hr["override_symlink"] = historyId + "/record.txt"
                     hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, originalID) + "/record.txt"
-                    errCh <- f.saveInternal(false, hr)
+                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
                     // errCh <- nil
                 }()
             }
@@ -493,21 +496,21 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         // update:
 
         // fmt.Println("updating", record["id"], "with", len(record), "fields")
-        if doLog {
+        if !options.NoHistory {
             record["updated_at"] = time.Now().Format(time.RFC3339Nano)
         }
         
         errCh := make(chan error, 2)
         var errChCount = 0
-        if doLog && f.ShouldSaveHistory {
+        if !options.NoHistory {
             if singleFileHistory {
                 serializedBytes := serializeRecordToBytes(record)
-                metaFiles, err := f.MetaFilesForRecord(record, false)
+                metaFiles, err := f.MetaFilesForRecord(record, WithIncludeOrder(options, false))
                 if err != nil {
                     return err
                 }
 
-                if !f.OnlyParentHistory {
+                if !options.HistoryOnly {
                     errChCount++
                     go func() {
                         size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
@@ -535,7 +538,7 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     theIdBefore := hr["id"]
                     hr["id"] += "/history/"
                     hr["non_history_id"] = theIdBefore
-                    errCh <- f.saveInternal(false, hr)
+                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
                     historyId := hr["id"]
                     // note that saveInternal updates the id
 
@@ -550,13 +553,13 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     // hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, originalID) + "/record.txt"
                     hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, strings.Join(parts, "/"+recordsName+"/") + "/") + "/record.txt"
                     // fmt.Println("saving update", hr["override_symlink"], "_coral")
-                    errCh <- f.saveInternal(false, hr)
+                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
                     // errCh <- nil
                 }()
             }
         }
 
-        if !f.OnlyParentHistory {
+        if !options.HistoryOnly {
             existingData, err := os.ReadFile(filePath)
             if err != nil {
                 // if strings.Contains(err.Error(), "no such file or directory") {
@@ -756,14 +759,22 @@ func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
     }
     
     
+    record := deserializeRecordBytes(data)
+    
+    // to know where to start subscribing, for clients only
     historyPath := f.RootDir + "/" + thePath + "/history.txt"
     fileInfo, err := os.Stat(historyPath)
     if err != nil {
-        return nil, err
+        if strings.Contains(err.Error(), "no such file or directory") {
+        } else {
+            return nil, err
+        }
     }
-    historySize := int(fileInfo.Size())
-    record := deserializeRecordBytes(data)
-    record["history_offset"] = strconv.Itoa(historySize)
+    
+    if err == nil {
+        historySize := int(fileInfo.Size())
+        record["history_offset"] = strconv.Itoa(historySize)
+    }
     
     return record, nil
 }
