@@ -150,7 +150,7 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, options *Options)
     parentId := strings.Join(parts[0:len(parts)-1], "/"+recordsName+"/")
     var parentHist string
     if strings.Contains(record["id"], ".") {
-        parentHist = f.RootDir + "/" + record["id"]
+        parentHist = f.RootDir + "/" + parentId
     } else {
         parentHist = f.RootDir + "/" + parentId + "/history.txt"
     }
@@ -331,42 +331,42 @@ const recordsName = "r"
 // const recordsName = "records"
 
 
-func processID(record map[string]string, hasDot bool, options *Options) (bool, string) {
+func getLocalRecordID(record map[string] string) string {
+    now := time.Now()
+    var localRecordId string
+    if record["unique_key"] != "" {
+        localRecordId = record["unique_key"]
+    } else {
+        localRecordId = encodeDate2(now) + "_" + generateUniqueID2() + "_" + nameize(record["name"])
+        //              10                  1    5                    1     16
+    }
+    return localRecordId
+}
+func processID(record map[string]string, hasDot bool, options *Options) (bool, string, string) {
     isNew := false
     var location string
     
     if hasDot && options.NoHistory {
         // as if new, but not really
         location = filepath.Dir(record["id"])
-        return true, location
+        return true, location, record["id"]
     }
     
     if hasDot && options.ParentHistoryOnly {
         location = filepath.Dir(record["id"])
-        return true, location
+        justFile := record["id"]
+        record["id"] += "/" + recordsName + "/" + getLocalRecordID(record)
+        return true, location, justFile
     }
     
     if strings.HasSuffix(record["id"], "/") {
         location = record["id"]
-        // localRecordId := now.Format("2006_01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
-        // localRecordId := now.Format("20060102/150405") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
-        now := time.Now()
-        // localRecordId := encodeDate(now) + "_" + generateUniqueID() + "_" + nameize(record["name"])
-        //               11                1     3                    1     16
-        var localRecordId string
-        
-        if record["unique_key"] != "" {
-            localRecordId = record["unique_key"]
-        } else {
-            localRecordId = encodeDate2(now) + "_" + generateUniqueID2() + "_" + nameize(record["name"])
-            //              10                  1    5                    1     16
-        }
+        localRecordId := getLocalRecordID(record)
         record["id"] += recordsName + "/" + localRecordId
-        // record["id"] += recordsName + "/" + generateUniqueID() + "_" + nameize(record["name"])
         isNew = true
     }
     record["id"] = strings.ReplaceAll(record["id"], "..", "")
-    return isNew, location
+    return isNew, location, ""
 }
 
 
@@ -386,22 +386,22 @@ func processID(record map[string]string, hasDot bool, options *Options) (bool, s
 
 func (f *Filecab) saveInternal(record map[string]string, options *Options) error {
     hasDot := strings.Contains(record["id"], ".")
-    isNew, location := processID(record, hasDot, options)
-    
-    // fmt.Println("#gold", record["id"], isNew, location)
-    
+    isNew, location, fileWithDot := processID(record, hasDot, options)
+
+    // fmt.Println("#gold", record["id"], isNew, location, fileWithDot)
+
     var fullDir string
     var filePath string
-    
+
     if hasDot {
         fullDir = f.RootDir + "/" + location
-        filePath = f.RootDir + "/" + record["id"]
+        filePath = f.RootDir + "/" + fileWithDot
     } else {
         fullDir = f.RootDir + "/" + record["id"]
         filePath = fullDir + "/" + "record.txt"
     }
-    // fmt.Println("full dir #yellow", fullDir)
-    
+    // fmt.Println("full dir #yellow", fullDir, filePath)
+
     if isNew {
         // fmt.Println("creating", record["id"], "with", len(record), "fields")
         timeStr := time.Now().Format(time.RFC3339Nano)
@@ -561,6 +561,7 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
             }
         }
     }
+    // fmt.Println("full dir #lawngreen", fullDir, filePath)
     return nil
 }
 
