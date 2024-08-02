@@ -1,0 +1,74 @@
+
+        if record["override_symlink"] == "" {
+            if !options.HistoryOnly {
+                errChCount++
+                go func() {
+                    err := os.WriteFile(filePath, serializedBytes, 0644)
+                    errCh <- err
+                }()
+            }
+        } else {
+            errChCount++
+            go func() {
+                errCh <- os.Symlink(record["override_symlink"], filePath)
+            }()
+        }
+new non single file history
+            } else {
+                errChCount += 2
+                go func() {
+                    hr := map[string]string{}
+                    for k, v := range record {
+                        hr[k] = v
+                    }
+
+                    theIdBefore := hr["id"]
+                    hr["id"] += "/history/"
+                    hr["non_history_id"] = theIdBefore
+                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
+                    historyId := hr["id"]
+                    // note that saveInternal updates the id
+                    // some of the processing could be improved by using localRecordId instead of trimming, splitting?
+                    // save up one level only
+                    parts := strings.Split(theIdBefore, "/"+recordsName+"/")
+                    parts = parts[0:len(parts)-1]
+
+                    hr = map[string]string{}
+                    hr["id"] = strings.Join(parts, "/"+recordsName+"/") + "/history/"
+                    // hr["override_symlink"] = historyId + "/record.txt"
+                    hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, location) + "/record.txt"
+                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
+                    // errCh <- nil
+                }()
+
+update non single file history
+            } else {
+                errChCount += 2
+                go func() {
+                    // fmt.Println("history for update", "_coral")
+                    hr := map[string]string{}
+                    for k, v := range record {
+                        hr[k] = v
+                    }
+
+                    theIdBefore := hr["id"]
+                    hr["id"] += "/history/"
+                    hr["non_history_id"] = theIdBefore
+                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
+                    historyId := hr["id"]
+                    // note that saveInternal updates the id
+
+                    // some of the processing could be improved by using localRecordId instead of trimming, splitting?
+                    // save up one level only
+                    parts := strings.Split(theIdBefore, "/"+recordsName+"/")
+                    parts = parts[0:len(parts)-1]
+
+                    hr = map[string]string{}
+                    hr["id"] = strings.Join(parts, "/"+recordsName+"/") + "/history/"
+                    // hr["override_symlink"] = historyId + "/record.txt"
+                    // hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, originalID) + "/record.txt"
+                    hr["override_symlink"] = "../../../../" + strings.TrimPrefix(historyId, strings.Join(parts, "/"+recordsName+"/") + "/") + "/record.txt"
+                    // fmt.Println("saving update", hr["override_symlink"], "_coral")
+                    errCh <- f.saveInternal(hr, WithNoHistory(options, true))
+                    // errCh <- nil
+                }()
