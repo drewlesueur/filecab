@@ -779,6 +779,33 @@ func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
     return record, nil
 }
 
+func (f *Filecab) MustHardDelete(thePath string) {
+    err := f.HardDelete(thePath)
+    if err != nil {
+        panic(err)
+    }
+}
+
+func (f *Filecab) HardDelete(thePath string) error {
+    f.mu.Lock()
+    defer f.mu.Unlock()
+
+    pathToDelete := f.RootDir + "/" + thePath
+    if !strings.Contains(pathToDelete, "filecab") {
+        return fmt.Errorf("name must contain filecab in order to delete, for safety")
+    }
+    if strings.Contains(pathToDelete, "..") {
+        return fmt.Errorf("dot dot not allowed, for safety")
+    }
+    // fmt.Println("#lawngreen going to delete", pathToDelete)
+    err := os.RemoveAll(pathToDelete)
+    if err != nil {
+        return fmt.Errorf("failed to delete path: %v", err)
+    }
+    
+    return nil
+}
+
 func (f *Filecab) MustLoadAll(thePath string) []map[string]string {
     result, err := f.LoadAll(thePath)
     if err != nil {
@@ -998,9 +1025,19 @@ func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[stri
 // function in Go to replace all non alphanumeric with underscore
 // and then truncate to at most 32 chars
 var nameRE *regexp.Regexp
+var waiter map[string]*WaiterData
+
+type WaiterData struct {
+    Chan chan int
+    NextID int
+    WaitingIDs map[int]bool
+    DoneIndex int
+}
+var waiterMu sync.Mutex
 func init() {
     _ = strconv.Itoa
 	nameRE = regexp.MustCompile(`[^a-zA-Z0-9]`)
+	waiter = map[string]*WaiterData{}
 }
 
 func nameize(s string) string {
@@ -1217,5 +1254,64 @@ func readFileInChunksBackwards(filePath string, offset int64, chunkSize int64) (
 }
 
 
+func Wait(name string) {
+    waiterMu.Lock()
+    w, ok := waiter[name]
+    if !ok {
+        waiterMu.Unlock()
+        return
+    }
+    ch := w.Chan
+    waiterMu.Unlock()
+    for i := 0; i < cap(ch); i++ {
+        ch <- 1
+    }
+    waiterMu.Lock()
+    delete(waiter, name)
+    waiterMu.Unlock()
+}
+func Limit(name string, max int, job func(), caughtUpFunc func()) {
+    waiterMu.Lock()
+    var ch chan int
+    w, ok := waiter[name]
+    if !ok {
+        w = &WaiterData{
+            Chan: make(chan int, max),
+            DoneIndex: 0,
+            NextID: 0,
+            WaitingIDs: map[int]bool{},
+        }
+        waiter[name] = w
+    }
+    ch = w.Chan
+
+    id := w.NextID
+    w.WaitingIDs[id] = true
+    w.NextID++
+    waiterMu.Unlock()
+    
+    ch <- 1
+    go func() {
+        job()
+        waiterMu.Lock()
+        // is everything before this done?
+        everythingBeforeDone := true
+        for waitingID, _ := range w.WaitingIDs {
+            if waitingID < id {
+                everythingBeforeDone = false
+            }
+        }
+        if everythingBeforeDone {
+			// fmt.Println("#lawngreen done", everythingBeforeDone, id)
+            caughtUpFunc()
+        } else {
+			// fmt.Println("#coral done", everythingBeforeDone, id)
+        }
+        ch := waiter[name].Chan
+        delete(w.WaitingIDs, id)
+        waiterMu.Unlock()
+        <- ch
+    }()
+}
 
 
