@@ -11,6 +11,7 @@ import (
     "io"
     "math/rand"
     "encoding/hex"
+    "path/filepath"
     "context"
     "regexp"
     "os"
@@ -73,17 +74,17 @@ func (f *Filecab) Save(record map[string]string, options *Options) error {
 }
 
 type Options struct {
-    HistoryOnly bool
+    ParentHistoryOnly bool
     NoHistory bool
     IncludeOrder bool
 }
 
-func WithHistoryOnly(options *Options, historyOnly bool) *Options {
+func WithParentHistoryOnly(options *Options, parentHistoryOnly bool) *Options {
     if options == nil {
-        return &Options{HistoryOnly: historyOnly}
+        return &Options{ParentHistoryOnly: parentHistoryOnly}
     }
     newOptions := *options
-    newOptions.HistoryOnly = historyOnly
+    newOptions.ParentHistoryOnly = parentHistoryOnly
     return &newOptions
 }
 
@@ -147,14 +148,19 @@ type MetaFiles struct {
 func (f *Filecab) MetaFilesForRecord(record map[string]string, options *Options) (*MetaFiles, error) {
     parts := strings.Split(record["id"], "/"+recordsName+"/")
     parentId := strings.Join(parts[0:len(parts)-1], "/"+recordsName+"/")
-    parentHist := f.RootDir + "/" + parentId + "/history.txt"
+    var parentHist string
+    if strings.Contains(record["id"], ".") {
+        parentHist = f.RootDir + "/" + record["id"]
+    } else {
+        parentHist = f.RootDir + "/" + parentId + "/history.txt"
+    }
     var recordHist, recordOrder string
     
     keepOpen := map[string]bool{
         parentHist: true,
     }
     
-    if !options.HistoryOnly {
+    if !options.ParentHistoryOnly {
         recordHist = f.RootDir + "/" + record["id"] + "/history.txt"
         keepOpen[recordHist] = true
         if options.IncludeOrder {
@@ -169,7 +175,7 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, options *Options)
     }
     
     var recordHistFile, recordOrderFile *os.File
-    if !options.HistoryOnly {
+    if !options.ParentHistoryOnly {
         recordHistFile, err = f.openFile(recordHist, keepOpen)
         if err != nil {
             return nil, err
@@ -325,9 +331,21 @@ const recordsName = "r"
 // const recordsName = "records"
 
 
-func processID(record map[string]string) (bool, string) {
+func processID(record map[string]string, hasDot bool, options *Options) (bool, string) {
     isNew := false
     var location string
+    
+    if hasDot && options.NoHistory {
+        // as if new, but not really
+        location = filepath.Dir(record["id"])
+        return true, location
+    }
+    
+    if hasDot && options.ParentHistoryOnly {
+        location = filepath.Dir(record["id"])
+        return true, location
+    }
+    
     if strings.HasSuffix(record["id"], "/") {
         location = record["id"]
         // localRecordId := now.Format("2006_01_02/15_04_05_") + fmt.Sprintf("%03d", now.Nanosecond()/1e6) + "_" + generateUniqueID() + "_" + nameize(record["name"])
@@ -336,11 +354,12 @@ func processID(record map[string]string) (bool, string) {
         // localRecordId := encodeDate(now) + "_" + generateUniqueID() + "_" + nameize(record["name"])
         //               11                1     3                    1     16
         var localRecordId string
-        if record["unique_key"] == "" {
+        
+        if record["unique_key"] != "" {
+            localRecordId = record["unique_key"]
+        } else {
             localRecordId = encodeDate2(now) + "_" + generateUniqueID2() + "_" + nameize(record["name"])
             //              10                  1    5                    1     16
-        } else {
-            localRecordId = record["unique_key"]
         }
         record["id"] += recordsName + "/" + localRecordId
         // record["id"] += recordsName + "/" + generateUniqueID() + "_" + nameize(record["name"])
@@ -366,10 +385,21 @@ func processID(record map[string]string) (bool, string) {
 
 
 func (f *Filecab) saveInternal(record map[string]string, options *Options) error {
-    isNew, location := processID(record)
+    hasDot := strings.Contains(record["id"], ".")
+    isNew, location := processID(record, hasDot, options)
     
-    fullDir := f.RootDir + "/" + record["id"]
-    filePath := fullDir + "/" + "record.txt"
+    // fmt.Println("#gold", record["id"], isNew, location)
+    
+    var fullDir string
+    var filePath string
+    
+    if hasDot {
+        fullDir = f.RootDir + "/" + location
+        filePath = f.RootDir + "/" + record["id"]
+    } else {
+        fullDir = f.RootDir + "/" + record["id"]
+        filePath = fullDir + "/" + "record.txt"
+    }
     // fmt.Println("full dir #yellow", fullDir)
     
     if isNew {
@@ -381,7 +411,7 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
         }
         serializedBytes := serializeRecordToBytes(record)
 
-        if !options.HistoryOnly {
+        if !options.ParentHistoryOnly {
             var err error
             err = os.MkdirAll(fullDir, os.ModePerm)
             if err != nil {
@@ -397,7 +427,7 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
         errCh := make(chan error, 12)
         var errChCount = 0
 
-        if !options.HistoryOnly {
+        if !options.ParentHistoryOnly {
             errChCount++
             go func() {
                 err := os.WriteFile(filePath, serializedBytes, 0644)
@@ -411,7 +441,7 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
                 if err != nil {
                     return err
                 }
-                if !options.HistoryOnly {
+                if !options.ParentHistoryOnly {
                     // errChCount++
                     // go func() {
                     //     size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
@@ -434,7 +464,7 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
                     errCh <- err
                 }()
 
-                if !options.HistoryOnly {
+                if !options.ParentHistoryOnly {
                     errChCount++
                     go func() {
                         errCh <- f.saveOrder(record, metaFiles.ParentOrder)
@@ -473,7 +503,7 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
                     return err
                 }
 
-                if !options.HistoryOnly {
+                if !options.ParentHistoryOnly {
                     errChCount++
                     go func() {
                         size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
@@ -492,7 +522,7 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
             }
         }
 
-        if !options.HistoryOnly {
+        if !options.ParentHistoryOnly {
             existingData, err := os.ReadFile(filePath)
             if err != nil {
                 // if strings.Contains(err.Error(), "no such file or directory") {
@@ -579,7 +609,12 @@ func (f *Filecab) MustLoadHistorySince(ctx context.Context, thePath string, star
 func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOffset int, maxEntries int, doWait bool, ) ([]map[string]string, int, error) {
     f.mu.Lock() // using lock and unlock cuz of Cond
     defer f.mu.Unlock()
-    historyPath := f.RootDir + "/" + thePath + "/history.txt"
+    var historyPath string
+    if strings.Contains(thePath, ".") {
+        historyPath = f.RootDir + "/" + thePath
+    } else {
+        historyPath = f.RootDir + "/" + thePath + "/history.txt"
+    }
     var waitErr error
     var rawBytes []byte
     
@@ -685,7 +720,15 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
 func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
-    recordPath := f.RootDir + "/" + thePath + "/record.txt"
+    
+    var recordPath string
+    var hasDot bool
+    if strings.Contains(thePath, ".") {
+        hasDot = true
+        recordPath = f.RootDir + "/" + thePath
+    } else {
+        recordPath = f.RootDir + "/" + thePath + "/record.txt"
+    }
     data, err := os.ReadFile(recordPath)
     if err != nil {
         return nil, err
@@ -695,18 +738,20 @@ func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
     record := deserializeRecordBytes(data)
     
     // to know where to start subscribing, for clients only
-    historyPath := f.RootDir + "/" + thePath + "/history.txt"
-    fileInfo, err := os.Stat(historyPath)
-    if err != nil {
-        if strings.Contains(err.Error(), "no such file or directory") {
-        } else {
-            return nil, err
+    if !hasDot {
+        historyPath := f.RootDir + "/" + thePath + "/history.txt"
+        fileInfo, err := os.Stat(historyPath)
+        if err != nil {
+            if strings.Contains(err.Error(), "no such file or directory") {
+            } else {
+                return nil, err
+            }
         }
-    }
     
-    if err == nil {
-        historySize := int(fileInfo.Size())
-        record["history_offset"] = strconv.Itoa(historySize)
+        if err == nil {
+            historySize := int(fileInfo.Size())
+            record["history_offset"] = strconv.Itoa(historySize)
+        }
     }
     
     return record, nil
