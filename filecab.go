@@ -140,44 +140,50 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, includeOrder bool
     parts := strings.Split(record["id"], "/"+recordsName+"/")
     parentId := strings.Join(parts[0:len(parts)-1], "/"+recordsName+"/")
     parentHist := f.RootDir + "/" + parentId + "/history.txt"
-    recordHist := f.RootDir + "/" + record["id"] + "/history.txt"
-    var recordOrder string
-    // localRecordId := parts[len(parts) - 1]
+    var recordHist, recordOrder string
     
     keepOpen := map[string]bool{
         parentHist: true,
-        recordHist: true,
-    }
-    if includeOrder {
-        recordOrder = f.RootDir + "/" + parentId + "/order.txt"
-        keepOpen[recordOrder] = true
     }
     
-    recordHistFile, err := f.openFile(recordHist, keepOpen)
-    if err != nil {
-        return nil, err
+    if !f.OnlyParentHistory {
+        recordHist = f.RootDir + "/" + record["id"] + "/history.txt"
+        keepOpen[recordHist] = true
+        if includeOrder {
+            recordOrder = f.RootDir + "/" + parentId + "/order.txt"
+            keepOpen[recordOrder] = true
+        }
     }
+    
     parentHistFile, err := f.openFile(parentHist, keepOpen)
     if err != nil {
         return nil, err
     }
-    var recordOrderFile *os.File
-    if includeOrder {
-        recordOrderFile, err = f.openFile(recordOrder, keepOpen)
+    
+    var recordHistFile, recordOrderFile *os.File
+    if !f.OnlyParentHistory {
+        recordHistFile, err = f.openFile(recordHist, keepOpen)
         if err != nil {
             return nil, err
         }
+        if includeOrder {
+            recordOrderFile, err = f.openFile(recordOrder, keepOpen)
+            if err != nil {
+                return nil, err
+            }
+        }
     }
+    
     return &MetaFiles{
-        RecordHist:  recordHistFile,
+        RecordHist:      recordHistFile,
         RecordHistPath:  recordHist,
-        ParentHist:  parentHistFile,
+        ParentHist:      parentHistFile,
         ParentHistPath:  parentHist,
-        ParentOrder: recordOrderFile,
+        ParentOrder:     recordOrderFile,
         ParentOrderPath: recordOrder,
     }, nil
-
 }
+
 
 
 func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, file *os.File) (int64, error) {
@@ -192,6 +198,8 @@ func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, 
     }
     return stat.Size(), nil
 }
+
+
 
 const idSize = 31
 func (f *Filecab) saveOrder(record map[string]string, file *os.File) error {
@@ -358,10 +366,6 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
     fullDir := f.RootDir + "/" + record["id"]
     filePath := fullDir + "/" + "record.txt"
     // fmt.Println("full dir #yellow", fullDir)
-    err := os.MkdirAll(fullDir, os.ModePerm)
-    if err != nil {
-        return err
-    }
     
     if isNew {
         // fmt.Println("creating", record["id"], "with", len(record), "fields")
@@ -372,20 +376,32 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
         }
         serializedBytes := serializeRecordToBytes(record)
 
-        // var err error
-        // err = os.MkdirAll(fullDir, os.ModePerm)
-        // if err != nil {
-        //     return err
-        // }
+        if !f.OnlyParentHistory {
+        // if true || !f.OnlyParentHistory {
+            var err error
+            err = os.MkdirAll(fullDir, os.ModePerm)
+            if err != nil {
+                return err
+            }
+        } else {
+            var err error
+            err = os.MkdirAll( f.RootDir + "/" + originalID, os.ModePerm)
+            if err != nil {
+                return err
+            }
+        }
         errCh := make(chan error, 12)
         var errChCount = 0
 
         if record["override_symlink"] == "" {
-            errChCount++
-            go func() {
-                err := os.WriteFile(filePath, serializedBytes, 0644)
-                errCh <- err
-            }()
+            if !f.OnlyParentHistory {
+            // if true || !f.OnlyParentHistory {
+                errChCount++
+                go func() {
+                    err := os.WriteFile(filePath, serializedBytes, 0644)
+                    errCh <- err
+                }()
+            }
         } else {
             errChCount++
             go func() {
@@ -403,18 +419,20 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                 if err != nil {
                     return err
                 }
-                // errChCount++
-                // go func() {
-                //     size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
-                //     _ = size
-                //     errCh <- err
-                // }()
-                size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
-                _ = size
-                if err != nil {
-                    return err
+                if !f.OnlyParentHistory {
+                    // errChCount++
+                    // go func() {
+                    //     size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
+                    //     _ = size
+                    //     errCh <- err
+                    // }()
+                    size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
+                    _ = size
+                    if err != nil {
+                        return err
+                    }
+                    f.BroadcastForFile(metaFiles.RecordHistPath)
                 }
-                f.BroadcastForFile(metaFiles.RecordHistPath)
                 // todo: wrangle the version
                 errChCount++
                 go func() {
@@ -423,10 +441,13 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                     f.BroadcastForFile(metaFiles.ParentHistPath)
                     errCh <- err
                 }()
-                errChCount++
-                go func() {
-                    errCh <- f.saveOrder(record, metaFiles.ParentOrder)
-                }()
+
+                if !f.OnlyParentHistory {
+                    errChCount++
+                    go func() {
+                        errCh <- f.saveOrder(record, metaFiles.ParentOrder)
+                    }()
+                }
             } else {
                 errChCount += 2
                 go func() {
@@ -485,13 +506,16 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                 if err != nil {
                     return err
                 }
-                errChCount++
-                go func() {
-                    size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
-                    _ = size
-                    f.BroadcastForFile(metaFiles.RecordHistPath)
-                    errCh <- err
-                }()
+
+                if !f.OnlyParentHistory {
+                    errChCount++
+                    go func() {
+                        size, err := f.saveHistory(record, serializedBytes, metaFiles.RecordHist)
+                        _ = size
+                        f.BroadcastForFile(metaFiles.RecordHistPath)
+                        errCh <- err
+                    }()
+                }
                 errChCount++
                 go func() {
                     size, err := f.saveHistory(record, serializedBytes, metaFiles.ParentHist)
@@ -531,38 +555,39 @@ func (f *Filecab) saveInternal(doLog bool, record map[string]string) error {
                 }()
             }
         }
-        existingData, err := os.ReadFile(filePath)
-        if err != nil {
-            // if strings.Contains(err.Error(), "no such file or directory") {
-            //     _, err := os.Create(filePath)
-            //     if err != nil {
-            //         return err
-            //     }
-            // } else {
-                return fmt.Errorf("no findy: %v", err)
-            // }
-        }
 
-
-        existingRecord := deserializeRecordBytes(existingData)
-        for k, v := range record {
-            if len(k) >= 2 {
-                if k[0] == '+' {
-                    // existingRecord[k] = strconv.
-                    continue
-                }
-                if k[0] == '.' {
-                    existingRecord[k[1:]] += v
-                    delete(existingRecord, k)
-                    continue
-                }
+        if !f.OnlyParentHistory {
+            existingData, err := os.ReadFile(filePath)
+            if err != nil {
+                // if strings.Contains(err.Error(), "no such file or directory") {
+                //     _, err := os.Create(filePath)
+                //     if err != nil {
+                //         return err
+                //     }
+                // } else {
+                    return fmt.Errorf("no findy: %v", err)
+                // }
             }
-            existingRecord[k] = v
-        }
-        serializedBytes := serializeRecordToBytes(existingRecord)
-        err = os.WriteFile(filePath, []byte(serializedBytes), 0644)
-        if err != nil {
-            return err
+            existingRecord := deserializeRecordBytes(existingData)
+            for k, v := range record {
+                if len(k) >= 2 {
+                    if k[0] == '+' {
+                        // existingRecord[k] = strconv.
+                        continue
+                    }
+                    if k[0] == '.' {
+                        existingRecord[k[1:]] += v
+                        delete(existingRecord, k)
+                        continue
+                    }
+                }
+                existingRecord[k] = v
+            }
+            serializedBytes := serializeRecordToBytes(existingRecord)
+            err = os.WriteFile(filePath, []byte(serializedBytes), 0644)
+            if err != nil {
+                return err
+            }
         }
         for i := 0; i < errChCount; i++ {
             if err := <-errCh; err != nil {
@@ -606,8 +631,16 @@ func (f *Filecab) DoneWaitingForFile(absolutePath string) {
 }
 
 
+func (f *Filecab) MustLoadHistorySince(ctx context.Context, thePath string, startOffset int, maxEntries int, doWait bool, ) ([]map[string]string, int) {
+    entries, offset, err := f.LoadHistorySince(ctx, thePath, startOffset, maxEntries, doWait)
+    if err != nil {
+        panic(err)
+    }
+    return entries, offset
+}
+
 // TODO: max
-func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOffset int, doWait bool) ([]map[string]string, int, error) {
+func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOffset int, maxEntries int, doWait bool, ) ([]map[string]string, int, error) {
     f.mu.Lock() // using lock and unlock cuz of Cond
     defer f.mu.Unlock()
     historyPath := f.RootDir + "/" + thePath + "/history.txt"
@@ -635,9 +668,49 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
         if err != nil {
             return nil, 0, err
         }
-        rawBytes, err = io.ReadAll(file)
-        if err != nil {
-            return nil, 0, err
+        if maxEntries == -1 {
+            rawBytes, err = io.ReadAll(file)
+            if err != nil {
+                return nil, 0, err
+            }
+        } else {
+            // add code here that will read the file until the maxEntries is reached
+            // an entry is delimited by 2 newlines (\n\n)
+            buffer := make([]byte, 1024)
+            entryCount := 0
+            for {
+                n, err := file.Read(buffer)
+                if err != nil && err != io.EOF {
+                    return nil, 0, err
+                }
+                if n == 0 {
+                    break
+                }
+                b := buffer[:n]
+                // fmt.Println("#gold", string(b))
+                state := ""
+                for _, theByte := range b {
+                    if state == "" {
+                        rawBytes = append(rawBytes, theByte)
+                        if theByte == '\n' {
+                            state = "newline"
+                        }
+                    } else if state == "newline" {
+                        state = ""
+                        rawBytes = append(rawBytes, theByte)
+                        if theByte == '\n' {
+                            entryCount++
+                            if entryCount == maxEntries {
+                                break
+                            }
+                        }
+                    }
+                }
+                // fmt.Println("#yellow", string(rawBytes))
+                if entryCount == maxEntries {
+                    break
+                }
+            }
         }
         
         if len(rawBytes) > 0 {
