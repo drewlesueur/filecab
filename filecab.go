@@ -122,7 +122,8 @@ func (f *Filecab) openFile(filePath string, keepOpen map[string]bool) (*os.File,
         }
         file = newFile
         f.openFiles[filePath] = file
-        if len(f.openFiles) > 100 {
+        if len(f.openFiles) > 5000 {
+        // if len(f.openFiles) > 20000 {
             for openPath, openFile := range f.openFiles {
                 if filePath != openPath && !keepOpen[openPath] {
                     openFile.Close()
@@ -336,6 +337,7 @@ func getLocalRecordID(record map[string] string) string {
     var localRecordId string
     if record["unique_key"] != "" {
         localRecordId = record["unique_key"]
+        delete(record, "unique_key")
     } else {
         localRecordId = encodeDate2(now) + "_" + generateUniqueID2() + "_" + nameize(record["name"])
         //              10                  1    5                    1     16
@@ -632,6 +634,9 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     c := f.InitWaitFile(historyPath)
     file, err := os.Open(historyPath)
     if err != nil {
+        if strings.Contains(err.Error(), "no such file") {
+            return nil, 0, nil
+        }
         return nil, 0, err
     }
     defer file.Close()
@@ -718,6 +723,15 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     return records, startOffset + len(rawBytes), nil
 }
 
+func (f *Filecab) MustLoadRecord(thePath string) map[string]string {
+    record, err := f.LoadRecord(thePath)
+    if err != nil {
+        panic(err)
+    }
+    return record
+}
+
+
 func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
@@ -732,6 +746,9 @@ func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
     }
     data, err := os.ReadFile(recordPath)
     if err != nil {
+        if strings.Contains(err.Error(), "no such file") {
+            return map[string]string{}, nil
+        }
         return nil, err
     }
     
@@ -817,6 +834,9 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     orderPath := f.RootDir + "/" + thePath + "/order.txt"
     data, err := os.ReadFile(orderPath)
     if err != nil {
+        if strings.Contains(err.Error(), "no such file") {
+            return nil, nil
+        }
         return nil, err
     }
     paths := strings.Split(string(data), "\n")
@@ -923,6 +943,9 @@ func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[stri
     orderPath := f.RootDir + "/" + thePath + "/order.txt"
     file, err := os.Open(orderPath)
     if err != nil {
+        if strings.Contains(err.Error(), "no such file") {
+            return nil, nil
+        }
         return nil, err
     }
     defer file.Close()
