@@ -20,7 +20,7 @@ import (
 
 var fc *Filecab
 
-const maxLoop = 1_000 * 1
+const maxLoop = 1_000 * 10
 // const maxLoop = 10
 const repeat = 1
 const extraFields = 100
@@ -35,7 +35,7 @@ func TestFilecab(t *testing.T) {
         "birthdate": "2001-01-01",
         "quote": "life is fun\nI like life",
     }
-    err := fc.Save(r)
+    err := fc.Save(r, nil)
     assert.Nil(t, err)
     
     r2 := map[string]string{
@@ -44,7 +44,7 @@ func TestFilecab(t *testing.T) {
         "birthdate": "2002-02-02",
         "quote": "I want to succeed\nat everything",
     }
-    err = fc.Save(r2)
+    err = fc.Save(r2, nil)
     assert.Nil(t, err)
     
     start := time.Now()
@@ -60,7 +60,7 @@ func TestFilecab(t *testing.T) {
             r["field" + jStr] = "value" + jStr
         }
         // err = fc.Save(r)
-        err = fc.Save(r)
+        err = fc.Save(r, nil)
         assert.Nil(t, err)
     }
 
@@ -97,7 +97,7 @@ func TestFilecab(t *testing.T) {
             "id": r["id"],
             "camping": "camping in " + strconv.Itoa(i) + " trees",
         }
-        err = fc.Save(updatedR)
+        err = fc.Save(updatedR, nil)
         if err != nil {
             fmt.Println(err, "_orangered")
         }
@@ -114,9 +114,61 @@ func TestFilecab(t *testing.T) {
     // assert.Nil(t, err)
     // fmt.Println(string(indentJSON))
     _ = json.Marshal
+}
+func TestFilecabParentHistoryOnly(t *testing.T) {
+    fmt.Println("")
+    r := map[string]string{
+        "id": "accounts.txt",
+        "name": "Mickey",
+        "birthdate": "2001-01-01",
+        "quote": "life is fun\nI like life",
+    }
+    err := fc.Save(r, WithParentHistoryOnly(nil, true))
+    assert.Nil(t, err)
     
+    r2 := map[string]string{
+        "id": "accounts.txt",
+        "name": "Minnie",
+        "birthdate": "2002-02-02",
+        "quote": "I want to succeed\nat everything",
+    }
+    err = fc.Save(r2, WithParentHistoryOnly(nil, true))
+    assert.Nil(t, err)
     
+    start := time.Now()
+    for i := 0; i < maxLoop; i++ {
+        r := map[string]string{
+            "id": "accounts.txt",
+            "name": "Mr. " + strconv.Itoa(i),
+            "birthdate": "2001-01-01",
+            "quote": strings.Repeat("I want to succeed\nat everything\n", repeat),
+        }
+        for j := 0; j < extraFields; j++ {
+            jStr := strconv.Itoa(j)
+            r["field" + jStr] = "value" + jStr
+        }
+        // err = fc.Save(r)
+        err = fc.Save(r, WithParentHistoryOnly(nil, true))
+        assert.Nil(t, err)
+    }
+
+    fmt.Println("writing took", time.Since(start), "_aqua")
     
+
+
+
+    start = time.Now()
+    ctx := context.Background()
+    records, _, err := fc.LoadHistorySince(ctx, "accounts.txt", 0, -1, false)
+    assert.Nil(t, err)
+    fmt.Println("number of records: ", len(records))
+    // indentJSON, err := json.MarshalIndent(records, "", "  ")
+    // assert.Nil(t, err)
+    // fmt.Println(string(indentJSON))
+    fmt.Println("reading4 took", time.Since(start), "_aqua")
+
+    
+    _ = json.Marshal
 }
 
 // write a similar test for Go to insert same number of records to

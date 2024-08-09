@@ -631,7 +631,7 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     })
     defer stopF()
     
-    c := f.InitWaitFile(historyPath)
+    // c := f.InitWaitFile(historyPath)
     file, err := os.Open(historyPath)
     if err != nil {
         if strings.Contains(err.Error(), "no such file") {
@@ -696,6 +696,7 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
         if !doWait {
             break
         } else {
+            c := f.InitWaitFile(historyPath)
             // fmt.Println("waiting for:", historyPath, "#orangered")
             c.Wait()
             if ctx.Err() != nil {
@@ -716,9 +717,23 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     // remove trailing \n\n
     rawRecords = rawRecords[0:len(rawRecords)-1]
     records := make([]map[string]string, len(rawRecords))
+    // deserialize concurrently?
+    var maxConcurrency = 10
+    var ch = make(chan int, maxConcurrency)
     for i, rawRecord := range rawRecords {
-        record := deserializeRecordBytes(rawRecord)
-        records[i] = record
+        i := i
+        rawRecord := rawRecord
+        ch <- 1
+        go func() {
+            defer func() {
+                <- ch
+            }()
+            record := deserializeRecordBytes(rawRecord)
+            records[i] = record
+        }()
+    }
+    for i := 0; i < maxConcurrency; i++ {
+        ch <- 1
     }
     return records, startOffset + len(rawBytes), nil
 }
