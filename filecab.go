@@ -610,8 +610,8 @@ func (f *Filecab) MustLoadHistorySince(ctx context.Context, thePath string, star
 
 // TODO: max
 func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOffset int, maxEntries int, doWait bool, ) ([]map[string]string, int, error) {
-    f.mu.Lock() // using lock and unlock cuz of Cond
-    defer f.mu.Unlock()
+    f.mu.RLock() // using lock and unlock cuz of Cond
+    defer f.mu.RUnlock()
     var historyPath string
     if strings.Contains(thePath, ".") {
         historyPath = f.RootDir + "/" + thePath
@@ -624,6 +624,7 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     // see the pattern here: https://pkg.go.dev/context#example-AfterFunc-Cond
     stopF := context.AfterFunc(ctx, func () {
         // should I explicitly make it the mutex from c
+        // Can Inuse RLock() and RUnlock()?
         f.mu.Lock() // using lock and unlock cuz of Cond
         defer f.mu.Unlock()
         // fmt.Println("stopped", historyPath, "#deepskyblue")
@@ -1073,7 +1074,7 @@ func nameize(s string) string {
 
 
 
-func serializeRecord(obj map[string]string) string {
+func SerializeRecord(obj map[string]string) string {
     keys := make([]string, 0, len(obj))
     for key := range obj {
         keys = append(keys, key)
@@ -1287,6 +1288,7 @@ func Wait(name string) {
     delete(waiter, name)
     waiterMu.Unlock()
 }
+
 func Limit(name string, max int, job func(), caughtUpFunc func()) {
     waiterMu.Lock()
     var ch chan int
@@ -1320,7 +1322,9 @@ func Limit(name string, max int, job func(), caughtUpFunc func()) {
         }
         if everythingBeforeDone {
 			// fmt.Println("#lawngreen done", everythingBeforeDone, id)
-            caughtUpFunc()
+            if caughtUpFunc != nil {
+                caughtUpFunc()
+            }
         } else {
 			// fmt.Println("#coral done", everythingBeforeDone, id)
         }
