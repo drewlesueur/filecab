@@ -106,7 +106,6 @@ func WithIncludeOrder(options *Options, includeOrder bool) *Options {
     return &newOptions
 }
 
-
 func (f *Filecab) MustSave(record map[string]string, options *Options) {
     if err := f.Save(record, options); err != nil {
         panic(err)
@@ -132,8 +131,43 @@ func (f *Filecab) openFile(filePath string, keepOpen map[string]bool) (*os.File,
                 }
             }
         }
+    } else {
     }
     return file, nil
+}
+
+func (f *Filecab) SaveLine(thePath, theLine string) error {
+    f.mu.Lock()
+    defer f.mu.Unlock()
+
+    fullDir := f.RootDir + "/" + thePath
+    theDir := filepath.Dir(fullDir)
+    
+    _, ok := f.openFiles[fullDir]
+    if !ok {
+        // Todo, embed this into openFile?
+        err := os.MkdirAll(theDir, os.ModePerm)
+        if err != nil {
+            return err
+        }
+    }
+
+    file, err := f.openFile(fullDir, nil)
+    if err != nil {
+        return err
+    }
+    if _, err := file.Write([]byte(theLine + "\n")); err != nil {
+        return err
+    }
+    return nil
+}
+
+
+func (f *Filecab) MustSaveLine(thePath, theLine string) {
+    err := f.SaveLine(thePath, theLine)
+    if err != nil {
+        panic(err)
+    }
 }
 
 type MetaFiles struct {
@@ -621,16 +655,19 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     var waitErr error
     var rawBytes []byte
     
-    // see the pattern here: https://pkg.go.dev/context#example-AfterFunc-Cond
-    stopF := context.AfterFunc(ctx, func () {
-        // should I explicitly make it the mutex from c
-        // Can Inuse RLock() and RUnlock()?
-        f.mu.Lock() // using lock and unlock cuz of Cond
-        defer f.mu.Unlock()
-        // fmt.Println("stopped", historyPath, "#deepskyblue")
-        f.BroadcastForFile(historyPath)
-    })
-    defer stopF()
+    
+    if doWait {
+        // see the pattern here: https://pkg.go.dev/context#example-AfterFunc-Cond
+        stopF := context.AfterFunc(ctx, func () {
+            // should I explicitly make it the mutex from c
+            // Can Inuse RLock() and RUnlock()?
+            f.mu.Lock() // using lock and unlock cuz of Cond
+            defer f.mu.Unlock()
+            // fmt.Println("stopped", historyPath, "#deepskyblue")
+            f.BroadcastForFile(historyPath)
+        })
+        defer stopF()
+    }
     
     // c := f.InitWaitFile(historyPath)
     file, err := os.Open(historyPath)
@@ -642,9 +679,11 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     }
     defer file.Close()
     for {
-        _, err = file.Seek(int64(startOffset), 0)
-        if err != nil {
-            return nil, 0, err
+        if startOffset != 0 {
+            _, err = file.Seek(int64(startOffset), 0)
+            if err != nil {
+                return nil, 0, err
+            }
         }
         if maxEntries == -1 {
             rawBytes, err = io.ReadAll(file)
@@ -706,7 +745,9 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
             }
         }
     }
-    f.DoneWaitingForFile(historyPath)
+    if doWait {
+        f.DoneWaitingForFile(historyPath)
+    }
     
     // just flow like normal
     _ = waitErr
@@ -1192,6 +1233,7 @@ func deserializeRecordBytes(data []byte) map[string]string {
     var currentValue []byte
     for _, line := range lines {
         if bytes.HasPrefix(line, []byte("    ")) {
+        // if len(line) > 0 && line[0] == ' ' {
             currentValue = append(currentValue, bytes.TrimPrefix(line, []byte("    "))...)
             currentValue = append(currentValue, '\n')
         } else if idx := bytes.Index(line, []byte(": ")); idx != -1 {
@@ -1335,4 +1377,32 @@ func Limit(name string, max int, job func(), caughtUpFunc func()) {
     }()
 }
 
+
+// make this a go function that takes a variable number of functions as parsmeters
+// and calls them all concurrently and waits until they are all done to return
+func WaitAll(funcs ...func()) {
+    var wg sync.WaitGroup
+    for _, fn := range funcs {
+        wg.Add(1)
+        go func(f func()) {
+            defer wg.Done()
+            f()
+        }(fn)
+    }
+    wg.Wait()
+}
+
+func LimitedLoop(count int, concurrency int, fn func(int)) {
+    ch := make(chan int, concurrency)
+    for i := 0; i < count; i++ {
+        ch <- 1
+        go func () {
+            fn(i)
+            <- ch
+        }()
+    }
+    for i := 0; i < concurrency; i++ {
+        ch <- 1
+    }
+}
 
