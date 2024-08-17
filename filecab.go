@@ -371,7 +371,7 @@ func getLocalRecordID(record map[string] string) string {
     var localRecordId string
     if record["unique_key"] != "" {
         localRecordId = record["unique_key"]
-        delete(record, "unique_key")
+        // delete(record, "unique_key")
     } else {
         localRecordId = encodeDate2(now) + "_" + generateUniqueID2() + "_" + nameize(record["name"])
         //              10                  1    5                    1     16
@@ -574,7 +574,16 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
             for k, v := range record {
                 if len(k) >= 2 {
                     if k[0] == '+' {
-                        // existingRecord[k] = strconv.
+                        existingValueString := existingRecord[k[1:]]
+                        existingValue, err := strconv.Atoi(existingValueString)
+                        if err != nil {
+                            existingValue = 0
+                        }
+                        newValue, err := strconv.Atoi(v)
+                        if err != nil {
+                            newValue = 0
+                        }
+                        existingRecord[k[1:]] = strconv.Itoa(existingValue + newValue)
                         continue
                     }
                     if k[0] == '.' {
@@ -644,8 +653,13 @@ func (f *Filecab) MustLoadHistorySince(ctx context.Context, thePath string, star
 
 // TODO: max
 func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOffset int, maxEntries int, doWait bool, ) ([]map[string]string, int, error) {
-    f.mu.RLock() // using lock and unlock cuz of Cond
-    defer f.mu.RUnlock()
+    if doWait {
+        f.mu.Lock() // using lock and unlock cuz of Cond
+        defer f.mu.Unlock()
+    } else {
+        f.mu.RLock()
+        defer f.mu.RUnlock()
+    }
     var historyPath string
     if strings.Contains(thePath, ".") {
         historyPath = f.RootDir + "/" + thePath
