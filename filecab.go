@@ -373,7 +373,7 @@ func getLocalRecordID(record map[string] string) string {
         localRecordId = record["unique_key"]
         // delete(record, "unique_key")
     } else {
-        localRecordId = encodeDate2(now) + "_" + generateUniqueID2() + "_" + nameize(record["name"])
+        localRecordId = encodeDate2(now) + "_" + generateUniqueID2() + "_" + Nameize(record["name"])
         //              10                  1    5                    1     16
     }
     return localRecordId
@@ -882,6 +882,7 @@ func (f *Filecab) MustLoadAll(thePath string) []map[string]string {
 }
 
 
+var empty = []map[string]string{}
 func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
@@ -906,9 +907,9 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     data, err := os.ReadFile(orderPath)
     if err != nil {
         if strings.Contains(err.Error(), "no such file") {
-            return nil, nil
+            return empty, nil
         }
-        return nil, err
+        return empty, err
     }
     paths := strings.Split(string(data), "\n")
     paths = paths[0:len(paths) - 1] // trailing newline
@@ -927,7 +928,7 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
             recordFile := path + "/record.txt"
             data, err := os.ReadFile(recordFile)
             if err != nil {
-                panic(err)
+                // panic(err)
                 errCh <- err
                 return
             }
@@ -940,7 +941,7 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     }
     close(errCh)
     if len(errCh) > 0 {
-        return nil, <-errCh
+        return empty, <-errCh
     }
     historySizeString := <- hSizeChan
     if len(records) > 0 {
@@ -1113,7 +1114,7 @@ func init() {
 	waiter = map[string]*WaiterData{}
 }
 
-func nameize(s string) string {
+func Nameize(s string) string {
     if s == "" {
         s = "r"
     }
@@ -1255,7 +1256,8 @@ func deserializeRecordBytes(data []byte) map[string]string {
                 result[currentKey] = string(bytes.TrimSuffix(currentValue, []byte("\n")))
             }
             currentKey = string(line[:idx])
-            currentValue = append(line[idx+2:], '\n')
+            // currentValue = append(line[idx+2:], '\n')
+            currentValue = line[idx+2:]
         }
     }
     if currentKey != "" {
