@@ -181,13 +181,17 @@ type MetaFiles struct {
 
 
 func (f *Filecab) MetaFilesForRecord(record map[string]string, options *Options) (*MetaFiles, error) {
-    parts := strings.Split(record["id"], "/"+recordsName+"/")
-    parentId := strings.Join(parts[0:len(parts)-1], "/"+recordsName+"/")
+    // parts := strings.Split(record["id"], "/"+recordsName+"/")
+    // parentId := strings.Join(parts[0:len(parts)-1], "/"+recordsName+"/")
+    // If you need other nested directories for caching, come up with a way to find the parent
+    parts := strings.Split(record["id"], "/")
+    parentId := strings.Join(parts[0:len(parts)-1], "/")
+    
     var parentHist string
     if strings.Contains(record["id"], ".") {
         parentHist = f.RootDir + "/" + parentId
     } else {
-        parentHist = f.RootDir + "/" + parentId + "/history.txt"
+        parentHist = f.RootDir + "/" + parentId + "/_history.txt"
     }
     var recordHist, recordOrder string
     
@@ -196,10 +200,10 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, options *Options)
     }
     
     if !options.ParentHistoryOnly {
-        recordHist = f.RootDir + "/" + record["id"] + "/history.txt"
+        recordHist = f.RootDir + "/" + record["id"] + "/_history.txt"
         keepOpen[recordHist] = true
         if options.IncludeOrder {
-            recordOrder = f.RootDir + "/" + parentId + "/order.txt"
+            recordOrder = f.RootDir + "/" + parentId + "/_order.txt"
             keepOpen[recordOrder] = true
         }
     }
@@ -252,8 +256,11 @@ func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, 
 
 const idSize = 31
 func (f *Filecab) saveOrder(record map[string]string, file *os.File) error {
-    parts := strings.Split(record["id"], "/"+recordsName+"/")
+    // parts := strings.Split(record["id"], "/"+recordsName+"/")
+    // If you need other nested directories for caching, come up with a way to find the parent
+    parts := strings.Split(record["id"], "/")
     localRecordId := parts[len(parts) - 1]
+    
     if len(localRecordId) < idSize {
         localRecordId = localRecordId + strings.Repeat("_", idSize-len(localRecordId)) 
     }
@@ -361,7 +368,7 @@ func encodeDate2(t time.Time) string {
 
 
 
-
+// #recordsdir
 const recordsName = "r"
 // const recordsName = "records"
 
@@ -374,7 +381,8 @@ func getLocalRecordID(record map[string] string) string {
         // delete(record, "unique_key")
     } else {
         localRecordId = encodeDate2(now) + "_" + generateUniqueID2() + "_" + Nameize(record["name"])
-        //              10                  1    5                    1     16
+        //              9                  1    5                    1       15
+        // 31 chars max for name
     }
     return localRecordId
 }
@@ -391,14 +399,16 @@ func processID(record map[string]string, hasDot bool, options *Options) (bool, s
     if hasDot && options.ParentHistoryOnly {
         location = filepath.Dir(record["id"])
         justFile := record["id"]
-        record["id"] += "/" + recordsName + "/" + getLocalRecordID(record)
+        // record["id"] += "/" + recordsName + "/" + getLocalRecordID(record)
+        record["id"] += "/" + getLocalRecordID(record)
         return true, location, justFile
     }
     
     if strings.HasSuffix(record["id"], "/") {
         location = record["id"]
         localRecordId := getLocalRecordID(record)
-        record["id"] += recordsName + "/" + localRecordId
+        // record["id"] += recordsName + "/" + localRecordId
+        record["id"] += localRecordId
         isNew = true
     }
     record["id"] = strings.ReplaceAll(record["id"], "..", "")
@@ -664,7 +674,7 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     if strings.Contains(thePath, ".") {
         historyPath = f.RootDir + "/" + thePath
     } else {
-        historyPath = f.RootDir + "/" + thePath + "/history.txt"
+        historyPath = f.RootDir + "/" + thePath + "/_history.txt"
     }
     var waitErr error
     var rawBytes []byte
@@ -828,7 +838,7 @@ func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
     
     // to know where to start subscribing, for clients only
     if !hasDot {
-        historyPath := f.RootDir + "/" + thePath + "/history.txt"
+        historyPath := f.RootDir + "/" + thePath + "/_history.txt"
         fileInfo, err := os.Stat(historyPath)
         if err != nil {
             if strings.Contains(err.Error(), "no such file or directory") {
@@ -890,7 +900,7 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     // you could make this part concurrent (perf)
     hSizeChan := make(chan string, 1)
     go func() {
-        historyPath := f.RootDir + "/" + thePath + "/history.txt"
+        historyPath := f.RootDir + "/" + thePath + "/_history.txt"
         fileInfo, err := os.Stat(historyPath)
         if err != nil {
             hSizeChan <- "-1"
@@ -903,7 +913,7 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     }()
 
     // fixed size local ids
-    orderPath := f.RootDir + "/" + thePath + "/order.txt"
+    orderPath := f.RootDir + "/" + thePath + "/_order.txt"
     data, err := os.ReadFile(orderPath)
     if err != nil {
         if strings.Contains(err.Error(), "no such file") {
@@ -918,7 +928,8 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     var records = make([]map[string]string, len(paths))
     errCh := make(chan error, len(paths))
     for i, path := range paths {
-        path := f.RootDir + "/" + thePath  + "/" + recordsName + "/" + strings.TrimRight(path, "_")
+        // path := f.RootDir + "/" + thePath  + "/" + recordsName + "/" + strings.TrimRight(path, "_")
+        path := f.RootDir + "/" + thePath  + "/" + strings.TrimRight(path, "_")
         i := i
         ch <- 1
         go func(path string) {
@@ -986,7 +997,7 @@ func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[stri
     f.mu.RLock()
     defer f.mu.RUnlock()
     // you could make this part concurrent
-    historyPath := f.RootDir + "/" + thePath + "/history.txt"
+    historyPath := f.RootDir + "/" + thePath + "/_history.txt"
     fileInfo, err := os.Stat(historyPath)
     if err != nil {
         return nil, err
@@ -1012,7 +1023,7 @@ func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[stri
     // so either a SEEK_SET, or a SEEK_END depending in megative offset
     // I do not want a file.Stat call at all
     //
-    orderPath := f.RootDir + "/" + thePath + "/order.txt"
+    orderPath := f.RootDir + "/" + thePath + "/_order.txt"
     file, err := os.Open(orderPath)
     if err != nil {
         if strings.Contains(err.Error(), "no such file") {
@@ -1061,7 +1072,8 @@ func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[stri
     var records = make([]map[string]string, len(paths))
     errCh := make(chan error, len(paths))
     for i, path := range paths {
-        path := f.RootDir + "/" + thePath  + "/" + recordsName + "/" + strings.TrimRight(path, "_")
+        // path := f.RootDir + "/" + thePath  + "/" + recordsName + "/" + strings.TrimRight(path, "_")
+        path := f.RootDir + "/" + thePath  + "/" + strings.TrimRight(path, "_")
         i := i
         ch <- 1
         go func(path string) {

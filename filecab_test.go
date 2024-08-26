@@ -505,7 +505,7 @@ func ExampleSerialize() {
         "quote": "life is fun\nI like life",
     }
 
-    v := serializeRecord(r)
+    v := SerializeRecord(r)
     fmt.Println(v)
     // Output:
     // birthdate: 1984-11-12
@@ -516,7 +516,9 @@ func ExampleSerialize() {
 }
 
 func TestMain(m *testing.M) {
+    fmt.Println("doing setup")
     setup()
+    fmt.Println("running test")
     code := m.Run()
     // teardown()
     os.Exit(code)
