@@ -663,6 +663,8 @@ func (f *Filecab) MustLoadHistorySince(ctx context.Context, thePath string, star
 
 // TODO: max
 func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOffset int, maxEntries int, doWait bool, ) ([]map[string]string, int, error) {
+    
+    // fmt.Println("#darkorange loading history since", doWait, thePath) 
     if doWait {
         f.mu.Lock() // using lock and unlock cuz of Cond
         defer f.mu.Unlock()
@@ -697,10 +699,35 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     file, err := os.Open(historyPath)
     if err != nil {
         if strings.Contains(err.Error(), "no such file") {
-            return nil, 0, nil
+            if !doWait {
+                return nil, 0, nil
+            }
         }
-        return nil, 0, err
+        if !doWait {
+            return nil, 0, err
+        }
     }
+    
+    // wait for file to exist
+    if doWait {
+        if file == nil {
+            c := f.InitWaitFile(historyPath)
+            for {
+                // fmt.Println("#lawngreen looping waiting for file")
+                file, err = os.Open(historyPath)
+                if err == nil {
+                    break
+                }
+                c.Wait()
+                if ctx.Err() != nil {
+                    waitErr = ctx.Err()
+                    break
+                }
+            }
+            f.DoneWaitingForFile(historyPath)
+        }
+    }
+
     defer file.Close()
     for {
         if startOffset != 0 {
