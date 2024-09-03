@@ -57,8 +57,8 @@ func New(rootDir string) *Filecab {
     }
     // f.CondTimer()
     return f
-    
-    
+
+
 }
 
 
@@ -77,6 +77,7 @@ type Options struct {
     ParentHistoryOnly bool
     NoHistory bool
     IncludeOrder bool
+    NoStamps bool
 }
 
 func WithParentHistoryOnly(options *Options, parentHistoryOnly bool) *Options {
@@ -94,6 +95,14 @@ func WithNoHistory(options *Options, noHistory bool) *Options {
     }
     newOptions := *options
     newOptions.NoHistory = noHistory
+    return &newOptions
+}
+func WithNoStamps(options *Options, noStamps bool) *Options {
+    if options == nil {
+        return &Options{NoStamps: noStamps}
+    }
+    newOptions := *options
+    newOptions.NoStamps = noStamps
     return &newOptions
 }
 
@@ -142,7 +151,7 @@ func (f *Filecab) SaveLine(thePath, theLine string) error {
 
     fullDir := f.RootDir + "/" + thePath
     theDir := filepath.Dir(fullDir)
-    
+
     _, ok := f.openFiles[fullDir]
     if !ok {
         // Todo, embed this into openFile?
@@ -186,7 +195,7 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, options *Options)
     // If you need other nested directories for caching, come up with a way to find the parent
     parts := strings.Split(record["id"], "/")
     parentId := strings.Join(parts[0:len(parts)-1], "/")
-    
+
     var parentHist string
     if strings.Contains(record["id"], ".") {
         parentHist = f.RootDir + "/" + parentId
@@ -194,11 +203,11 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, options *Options)
         parentHist = f.RootDir + "/" + parentId + "/_history.txt"
     }
     var recordHist, recordOrder string
-    
+
     keepOpen := map[string]bool{
         parentHist: true,
     }
-    
+
     if !options.ParentHistoryOnly {
         recordHist = f.RootDir + "/" + record["id"] + "/_history.txt"
         keepOpen[recordHist] = true
@@ -207,12 +216,12 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, options *Options)
             keepOpen[recordOrder] = true
         }
     }
-    
+
     parentHistFile, err := f.openFile(parentHist, keepOpen)
     if err != nil {
         return nil, err
     }
-    
+
     var recordHistFile, recordOrderFile *os.File
     if !options.ParentHistoryOnly {
         recordHistFile, err = f.openFile(recordHist, keepOpen)
@@ -226,7 +235,7 @@ func (f *Filecab) MetaFilesForRecord(record map[string]string, options *Options)
             }
         }
     }
-    
+
     return &MetaFiles{
         RecordHist:      recordHistFile,
         RecordHistPath:  recordHist,
@@ -244,7 +253,7 @@ func (f *Filecab) saveHistory(record map[string]string, serializedBytes []byte, 
         return 0, err
     }
     // return 0, nil
-    
+
     stat, err := file.Stat()
     if err != nil {
         return 0, err
@@ -260,9 +269,9 @@ func (f *Filecab) saveOrder(record map[string]string, file *os.File) error {
     // If you need other nested directories for caching, come up with a way to find the parent
     parts := strings.Split(record["id"], "/")
     localRecordId := parts[len(parts) - 1]
-    
+
     if len(localRecordId) < idSize {
-        localRecordId = localRecordId + strings.Repeat("_", idSize-len(localRecordId)) 
+        localRecordId = localRecordId + strings.Repeat("_", idSize-len(localRecordId))
     }
     if _, err := file.Write([]byte(localRecordId + "\n")); err != nil {
         return err
@@ -279,20 +288,20 @@ const linkedList = false
 
 // write a function in Go to represent a number as base 60 with the following characters
 var timeEncoding = [62]string{
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", 
-    "A", "a", "B", "b", "C", "c", "D", "d", "E", "e", 
-    "F", "f", "G", "g", "H", "h", "I", "i", "J", "j", 
-    "K", "k", "L", "l", "M", "m", "N", "n", "O", "o", 
-    "P", "p", "Q", "q", "R", "r", "S", "s", "T", "t", 
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+    "A", "a", "B", "b", "C", "c", "D", "d", "E", "e",
+    "F", "f", "G", "g", "H", "h", "I", "i", "J", "j",
+    "K", "k", "L", "l", "M", "m", "N", "n", "O", "o",
+    "P", "p", "Q", "q", "R", "r", "S", "s", "T", "t",
     "U", "u", "V", "v", "W", "w", "X", "x", "Y", "y",
     // zs get left out
     "Z", "z",
 }
 
 var timeEncoding2 = [36]string{
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", 
-    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", 
-    "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", 
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j",
+    "k", "l", "m", "n", "o", "p", "q", "r", "s", "t",
     "u", "v", "w", "x", "y", "z",
 }
 
@@ -346,7 +355,7 @@ func encodeDate(t time.Time) string {
     // millisecond := t.Nanosecond() / 1000000
     // instead of using time encoding, just use a 0 padded 2 digit number  (Golang)
     return yearStr + timeEncoding[month] + timeEncoding[day] + "_" + timeEncoding[hour] + timeEncoding[minute] + timeEncoding[second] + timeEncoding[frame]
-    
+
 }
 func encodeDate2(t time.Time) string {
     year := t.Year()
@@ -355,7 +364,7 @@ func encodeDate2(t time.Time) string {
     hour := t.Hour()
     minute := t.Minute()
     second := t.Second()
-    
+
     // minSec := minute * second
     // minSec1 = int(minSec / 100)
     // minSec2 = minSec - (minSec1 * 100)
@@ -363,7 +372,7 @@ func encodeDate2(t time.Time) string {
 
     return toBase36(year - 2020, 2) + toBase36(month, 1) + toBase36(day, 1) + toBase36(hour, 1) + padString(strconv.Itoa(minute), 2) + padString(strconv.Itoa(second), 2)
     // YYmd_Hmmss
-    
+
 }
 
 
@@ -389,13 +398,13 @@ func getLocalRecordID(record map[string] string) string {
 func processID(record map[string]string, hasDot bool, options *Options) (bool, string, string) {
     isNew := false
     var location string
-    
+
     if hasDot && options.NoHistory {
         // as if new, but not really
         location = filepath.Dir(record["id"])
         return true, location, record["id"]
     }
-    
+
     if hasDot && options.ParentHistoryOnly {
         location = filepath.Dir(record["id"])
         justFile := record["id"]
@@ -403,7 +412,7 @@ func processID(record map[string]string, hasDot bool, options *Options) (bool, s
         record["id"] += "/" + getLocalRecordID(record)
         return true, location, justFile
     }
-    
+
     if strings.HasSuffix(record["id"], "/") {
         location = record["id"]
         localRecordId := getLocalRecordID(record)
@@ -421,7 +430,7 @@ func processID(record map[string]string, hasDot bool, options *Options) (bool, s
 //     isNew, originalID := processID(record)
 //     fullDir := f.RootDir + "/" + record["id"]
 //     queuePath := fullDir + "/" + "queue.txt"
-// 
+//
 //     queueLength, err := os.Stat(queuePath)
 //     if err != nil {
 //         return nil
@@ -451,7 +460,7 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
     if isNew {
         // fmt.Println("creating", record["id"], "with", len(record), "fields")
         timeStr := time.Now().Format(time.RFC3339Nano)
-        if !options.NoHistory {
+        if !options.NoHistory && !options.NoStamps {
             record["updated_at"] = timeStr
             record["created_at"] = timeStr
         }
@@ -519,12 +528,12 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
             }
         }
 
-        linkedList := false 
+        linkedList := false
         if linkedList {
             // linked list section 1
         }
-        
-        
+
+
         for i := 0; i < errChCount; i++ {
             if err := <-errCh; err != nil {
                 return err
@@ -535,10 +544,10 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
         // update:
 
         // fmt.Println("updating", record["id"], "with", len(record), "fields")
-        if !options.NoHistory {
+        if !options.NoHistory && !options.NoStamps {
             record["updated_at"] = time.Now().Format(time.RFC3339Nano)
         }
-        
+
         errCh := make(chan error, 2)
         var errChCount = 0
         if !options.NoHistory {
@@ -678,8 +687,8 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     }
     var waitErr error
     var rawBytes []byte
-    
-    
+
+
     if doWait {
         // see the pattern here: https://pkg.go.dev/context#example-AfterFunc-Cond
         stopF := context.AfterFunc(ctx, func () {
@@ -692,7 +701,7 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
         })
         defer stopF()
     }
-    
+
     // c := f.InitWaitFile(historyPath)
     file, err := os.Open(historyPath)
     if err != nil {
@@ -753,7 +762,7 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
                 }
             }
         }
-        
+
         if len(rawBytes) > 0 {
             break
         }
@@ -772,13 +781,13 @@ func (f *Filecab) LoadHistorySince(ctx context.Context, thePath string, startOff
     if doWait {
         f.DoneWaitingForFile(historyPath)
     }
-    
+
     // just flow like normal
     _ = waitErr
     // if waitErr != nil {
     //     return []map[string]string{}, 0, waitErr
     // }
-    
+
     rawRecords := bytes.Split(rawBytes, []byte("\n\n"))
     // remove trailing \n\n
     rawRecords = rawRecords[0:len(rawRecords)-1]
@@ -816,7 +825,7 @@ func (f *Filecab) MustLoadRecord(thePath string) map[string]string {
 func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
-    
+
     var recordPath string
     var hasDot bool
     if strings.Contains(thePath, ".") {
@@ -832,10 +841,10 @@ func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
         }
         return nil, err
     }
-    
-    
+
+
     record := deserializeRecordBytes(data)
-    
+
     // to know where to start subscribing, for clients only
     if !hasDot {
         historyPath := f.RootDir + "/" + thePath + "/_history.txt"
@@ -846,13 +855,46 @@ func (f *Filecab) LoadRecord(thePath string) (map[string]string, error) {
                 return nil, err
             }
         }
-    
+
         if err == nil {
             historySize := int(fileInfo.Size())
             record["history_offset"] = strconv.Itoa(historySize)
         }
     }
-    
+
+    return record, nil
+}
+
+func (f *Filecab) LoadRecordWithChildren(thePath string) (map[string]any, error) {
+    r, err := f.LoadRecord(thePath)
+    if err != nil {
+        return nil, err
+    }
+
+    record := make(map[string]any)
+    for k, v := range r {
+        record[k] = v
+    }
+
+    fmt.Println("#yellowgreen thePath", thePath)
+    subdirs, err := os.ReadDir(f.RootDir + "/" + thePath)
+    if err != nil {
+        return nil, err
+    }
+
+    for _, entry := range subdirs {
+        if entry.IsDir() {
+            fmt.Println("#lime subdir", entry.Name())
+            subPath := filepath.Join(thePath, entry.Name())
+            // v, err := f.LoadAllWithChildren(subPath) // future implementation
+            v, err := f.LoadAll(subPath)
+            if err != nil {
+                return nil, err
+            }
+            record[entry.Name()] = v
+        }
+    }
+
     return record, nil
 }
 
@@ -879,7 +921,7 @@ func (f *Filecab) HardDelete(thePath string) error {
     if err != nil {
         return fmt.Errorf("failed to delete path: %v", err)
     }
-    
+
     return nil
 }
 
@@ -896,7 +938,7 @@ var empty = []map[string]string{}
 func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     f.mu.RLock()
     defer f.mu.RUnlock()
-    
+
     // you could make this part concurrent (perf)
     hSizeChan := make(chan string, 1)
     go func() {
@@ -960,6 +1002,9 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     }
     return records, nil
 }
+// func (f *Filecab) LoadAllWithChildren(thePath string) ([], error) {
+//     
+// }
 
 func convertToInt64(value any) (int64, error) {
     switch v := value.(type) {
@@ -993,7 +1038,7 @@ func (f *Filecab) MustLoadRange(thePath string, offset, limit any) []map[string]
 func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[string]string, error) {
     offset, _ := convertToInt64(offsetAny)
     limit, _ := convertToInt64(limitAny)
-    
+
     f.mu.RLock()
     defer f.mu.RUnlock()
     // you could make this part concurrent
@@ -1004,7 +1049,7 @@ func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[stri
     }
     historySize := int(fileInfo.Size())
     historySizeString := strconv.Itoa(historySize)
-    
+
     // fixed size local ids
     // each item in the file is 66 bytes separated by a new line
     // update this code to use the offset and limit args
@@ -1017,7 +1062,7 @@ func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[stri
     // don't read the whole file in to memory, just use Seek and Read to pull out a chunk
     // to memory, then split it on newline
     // Construct the path to order.txt
-    // update this code to not get the lengt of the file, but use SEEK_END 
+    // update this code to not get the lengt of the file, but use SEEK_END
     // when dealing with negative offsets
     // but I only want one seek call at all
     // so either a SEEK_SET, or a SEEK_END depending in megative offset
@@ -1065,8 +1110,8 @@ func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[stri
     //     fmt.Println(path)
     // }
     // return nil, nil
-    
-    
+
+
     var maxConcurrency = 100
     var ch = make(chan int, maxConcurrency)
     var records = make([]map[string]string, len(paths))
@@ -1098,7 +1143,7 @@ func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[stri
     if len(errCh) > 0 {
         return nil, <-errCh
     }
-    
+
     // todo: maybe another return value for collection offset
     // cuz what if the first one gets filtered out
     if len(records) > 0 {
@@ -1275,7 +1320,7 @@ func deserializeRecordBytes(data []byte) map[string]string {
     if currentKey != "" {
         result[currentKey] = string(bytes.TrimSuffix(currentValue, []byte("\n")))
     }
-    
+
     return result
 }
 
@@ -1295,7 +1340,7 @@ func generateUniqueID() string {
 }
 
 func generateUniqueID2() string {
-    counter = (counter + 1) % (36 * 36 * 36 * 36 * 36) 
+    counter = (counter + 1) % (36 * 36 * 36 * 36 * 36)
     return toBase36(counter, 5)
 }
 
@@ -1378,7 +1423,7 @@ func Limit(name string, max int, job func(), caughtUpFunc func()) {
     w.WaitingIDs[id] = true
     w.NextID++
     waiterMu.Unlock()
-    
+
     ch <- 1
     go func() {
         job()
