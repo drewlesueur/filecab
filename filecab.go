@@ -456,6 +456,12 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
         filePath = fullDir + "/" + "record.txt"
     }
     // fmt.Println("full dir #yellow", fullDir, filePath)
+    
+    if isNew && record["unique_key"] != "" {
+        if _, err := os.Stat(filePath); !os.IsNotExist(err) {
+            isNew = false
+        }
+    }
 
     if isNew {
         // fmt.Println("creating", record["id"], "with", len(record), "fields")

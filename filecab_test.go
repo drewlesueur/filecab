@@ -26,6 +26,20 @@ const repeat = 1
 const extraFields = 100
 // const maxLoop = 10
 
+
+func TestUniqueKey(t *testing.T) {
+    for i := 0; i < 5; i++ {
+        v := map[string]string{
+            "id": "somestuff/",
+            "unique_key": "hello",
+        }
+        err := fc.Save(v, nil)
+        assert.Nil(t, err)
+        records, err := fc.LoadAll("somestuff/")
+        assert.Nil(t, err)
+        assert.Equal(t, 1, len(records))
+    }
+}
 // TODO: rwlock
 func TestFilecab(t *testing.T) {
     fmt.Println("")
