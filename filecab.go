@@ -18,6 +18,7 @@ import (
     "bytes"
     "fmt"
 	"compress/gzip"
+	"encoding/json"
 )
 
 
@@ -456,12 +457,19 @@ func (f *Filecab) saveInternal(record map[string]string, options *Options) error
         filePath = fullDir + "/" + "record.txt"
     }
     // fmt.Println("full dir #yellow", fullDir, filePath)
+    // fmt.Println("isNew #lawngreen", isNew)
     
     if isNew && record["unique_key"] != "" {
         if _, err := os.Stat(filePath); !os.IsNotExist(err) {
             isNew = false
         }
+    } else if !isNew {
+        if _, err := os.Stat(filePath); os.IsNotExist(err) {
+            isNew = true
+        }
     }
+    // fmt.Println("isNew #violet", isNew)
+    
 
     if isNew {
         // fmt.Println("creating", record["id"], "with", len(record), "fields")
@@ -953,6 +961,20 @@ func (f *Filecab) HardDelete(thePath string) error {
     err := os.RemoveAll(pathToDelete)
     if err != nil {
         return fmt.Errorf("failed to delete path: %v", err)
+    }
+    for filename, theFile := range f.openFiles {
+        if filename == pathToDelete || strings.HasPrefix(filename, pathToDelete + "/") {
+            delete(f.openFiles, filename)
+            theFile.Close()
+        }
+    }
+    // logJSON(f.openFiles)
+    for filename, _ := range f.conds {
+        if filename == pathToDelete || strings.HasPrefix(filename, pathToDelete + "/") {
+            delete(f.conds, filename)
+            delete(f.condCounts, filename)
+            // broadcast? or just let it time out
+        }
     }
 
     return nil
@@ -1512,3 +1534,10 @@ func LimitedLoop(count int, concurrency int, fn func(int)) {
     }
 }
 
+func logJSON(v any) {
+    b, err := json.MarshalIndent(v, "", "    ")
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(string(b))
+}

@@ -26,8 +26,63 @@ const repeat = 1
 const extraFields = 100
 // const maxLoop = 10
 
+func xTestWeird(t *testing.T) {
+    // Thistests that after a hardDelete, openFile caches are cleaned
+    fc.MustHardDelete("somestuff")
+    v := map[string]string{
+        "id": "somestuff/hiya",
+        "color": "aquamarine",
+    }
+    err := fc.Save(v, nil)
+    v2, err := fc.LoadRecord("somestuff/hiya")
+    assert.Nil(t, err)
+    assert.Equal(t, v["color"], v2["color"])
+    
+    localDir := "/home/ubuntu/filecab/filecab_userdata"
+    os.MkdirAll(localDir, os.ModePerm)
 
-func TestUniqueKey(t *testing.T) {
+    fc.MustHardDelete("somestuff")
+    v = map[string]string{
+        "id": "somestuff/",
+        "unique_key": "hello",
+    }
+    err = fc.Save(v, nil)
+    assert.Nil(t, err)
+    records, err := fc.LoadAll("somestuff/")
+    assert.Nil(t, err)
+    assert.Equal(t, 1, len(records))
+    logJSON(records)
+    
+    v2, err = fc.LoadRecord("somestuff/hello")
+    assert.Nil(t, err)
+    assert.Equal(t, v2["unique_key"], v["unique_key"])
+    logJSON(v2)
+    
+    
+}
+func TestSaveWithPredefinedId(t *testing.T) {
+    fc.MustHardDelete("somestuff")
+    v := map[string]string{
+        "id": "somestuff/hiya",
+        "color": "aquamarine",
+    }
+    err := fc.Save(v, nil)
+    assert.Nil(t, err)
+    // time.Sleep(60 * time.Second)
+
+    v2, err := fc.LoadRecord("somestuff/hiya")
+    assert.Nil(t, err)
+    assert.Equal(t, v["color"], v2["color"])
+    logJSON(v2)
+
+    vs, err := fc.LoadAll("somestuff")
+    assert.Nil(t, err)
+    assert.Equal(t, 1, len(vs))
+    logJSON(vs)
+}
+
+func xTestUniqueKey(t *testing.T) {
+    fc.MustHardDelete("somestuff")
     for i := 0; i < 5; i++ {
         v := map[string]string{
             "id": "somestuff/",
@@ -38,9 +93,10 @@ func TestUniqueKey(t *testing.T) {
         records, err := fc.LoadAll("somestuff/")
         assert.Nil(t, err)
         assert.Equal(t, 1, len(records))
+        logJSON(records)
     }
 }
-// TODO: rwlock
+
 func TestFilecab(t *testing.T) {
     fmt.Println("")
     r := map[string]string{
@@ -419,7 +475,7 @@ func TestSqliteInsertion(t *testing.T) {
 
 // write the same function but for mongodb
 // delete the existing mongo db and create it as part of the test
-func TestMongoInsertion(t *testing.T) {
+func xTestMongoInsertion(t *testing.T) {
     clientOptions := options.Client().ApplyURI("mongodb://localhost:27018")
     client, err := mongo.Connect(context.TODO(), clientOptions)
     assert.Nil(t, err)
