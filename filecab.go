@@ -1,6 +1,11 @@
 package filecab
 
-// TODO; cache of most recently updated files
+// TODO: consider not saving full id
+// to allow moving around more easily.
+// You could reconstruct then id on the way out.
+
+// [ ] always add unique_key meaning the local id
+
 
 import (
     "sync"
@@ -9,8 +14,7 @@ import (
     "sort"
     "time"
     "io"
-    "math/rand"
-    "encoding/hex"
+    "crypto/rand"
     "path/filepath"
     "context"
     "regexp"
@@ -19,8 +23,8 @@ import (
     "fmt"
 	"compress/gzip"
 	"encoding/json"
+    "math/big"
 )
-
 
 // get length
 // most recently updated.
@@ -327,6 +331,7 @@ func toBase60(n int) string {
 	return result
 }
 
+
 func toBase36(n int, padding int) string {
 	if n == 0 {
 		return timeEncoding2[0]
@@ -337,8 +342,12 @@ func toBase36(n int, padding int) string {
 		result = timeEncoding2[remainder] + result
 		n /= 36
 	}
-	for len(result) < padding {
-		result = "0" + result
+	if len(result) > padding {
+		result = result[len(result)-padding:]
+	} else {
+		for len(result) < padding {
+			result = "0" + result
+		}
 	}
 	return result
 }
@@ -390,8 +399,8 @@ func getLocalRecordID(record map[string] string) string {
         localRecordId = record["unique_key"]
         // delete(record, "unique_key")
     } else {
-        localRecordId = encodeDate2(now) + "_" + generateUniqueID2() + "_" + Nameize(record["name"])
-        //              9                  1    5                    1       15
+        localRecordId = encodeDate2(now) + "_" + generateUniqueID2() + "_" + Nameize(record["name"], 15)
+        //              9                  1     5                     1     15
         // 31 chars max for name
     }
     return localRecordId
@@ -1053,7 +1062,7 @@ func (f *Filecab) LoadAll(thePath string) ([]map[string]string, error) {
     }
     historySizeString := <- hSizeChan
     if len(records) > 0 {
-        records[0]["collection_offset"] = historySizeString
+        records[0]["_collection_offset"] = historySizeString
     }
     return records, nil
 }
@@ -1202,7 +1211,7 @@ func (f *Filecab) LoadRange(thePath string, offsetAny, limitAny any) ([]map[stri
     // todo: maybe another return value for collection offset
     // cuz what if the first one gets filtered out
     if len(records) > 0 {
-        records[0]["collection_offset"] = historySizeString
+        records[0]["_collection_offset"] = historySizeString
     }
     return records, nil
 }
@@ -1226,13 +1235,14 @@ func init() {
 	waiter = map[string]*WaiterData{}
 }
 
-func Nameize(s string) string {
+func Nameize(s string, theLen int) string {
     if s == "" {
-        s = "r"
+        return "r"
+        // return generateRandomBase36(theLen)
     }
     processed := nameRE.ReplaceAllString(s, "_")
-    if len(processed) > 15 {
-        processed = processed[:15]
+    if len(processed) > theLen {
+        processed = processed[:theLen]
     }
     processed = strings.ToLower(processed)
     processed = strings.TrimRight(processed, "_")
@@ -1389,6 +1399,8 @@ func padString(s string, size int) string {
 
 
 var counter int
+
+// deprecated
 func generateUniqueID() string {
     counter = (counter + 1) % 216000 // 60 ^ 3
     return padString(toBase60(counter), 3)
@@ -1399,15 +1411,17 @@ func generateUniqueID2() string {
     return toBase36(counter, 5)
 }
 
-func generateUniqueID_old() string {
-	randomBytes := make([]byte, 8)
-	_, err := rand.Read(randomBytes)
-	if err != nil {
-		panic(err)
-	}
-	randomPart := hex.EncodeToString(randomBytes)
-	return randomPart
+// TODO: I think we can optimize this
+func generateRandomBase36(size int) string {
+    result := make([]byte, size)
+    for i := 0; i < size; i++ {
+        num, _ := rand.Int(rand.Reader, big.NewInt(36))
+        result[i] = timeEncoding2[num.Int64()][0]
+    }
+    return string(result)
 }
+
+
 
 
 // golang function to read a file in chuncks backwards up to a specific byte offset
