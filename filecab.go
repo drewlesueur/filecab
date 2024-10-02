@@ -947,6 +947,44 @@ func (f *Filecab) LoadRecordWithChildren(thePath string) (map[string]any, error)
 
     return record, nil
 }
+func (f *Filecab) LoadRecordWithDescendants(thePath string) (map[string]interface{}, error) {
+    mainRecord, err := f.LoadRecord(thePath)
+    if err != nil {
+        return nil, fmt.Errorf("error loading main record: %v", err)
+    }
+
+    result := make(map[string]interface{})
+    for k, v := range mainRecord {
+        result[k] = v
+    }
+
+    subdirs, err := os.ReadDir(f.RootDir + "/" + thePath)
+    if err != nil {
+        return nil, fmt.Errorf("error reading directory: %v", err)
+    }
+
+        for _, entry := range subdirs {
+        if entry.IsDir() {
+            subPath := filepath.Join(thePath, entry.Name())
+            childRecords, err := f.LoadAll(subPath)
+            if err != nil {
+                return nil, fmt.Errorf("error loading child records: %v", err)
+            }
+
+            orderedDescendants := make([]map[string]interface{}, 0)
+            for _, childRecord := range childRecords {
+                descendantData, err := f.LoadRecordWithDescendants(childRecord["id"])
+                if err != nil {
+                    return nil, fmt.Errorf("error loading descendant records: %v", err)
+                }
+                orderedDescendants = append(orderedDescendants, descendantData)
+            }
+            result[entry.Name()] = orderedDescendants
+        }
+    }
+
+    return result, nil
+}
 
 func (f *Filecab) MustHardDelete(thePath string) {
     err := f.HardDelete(thePath)
