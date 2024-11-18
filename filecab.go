@@ -19,6 +19,7 @@ import (
     "context"
     "regexp"
     "os"
+    "bufio"
     "bytes"
     "fmt"
 	"compress/gzip"
@@ -1010,17 +1011,56 @@ func (f *Filecab) HardDelete(thePath string) error {
         return fmt.Errorf("failed to delete path: %v", err)
     }
     for filename, theFile := range f.openFiles {
-        if filename == pathToDelete || strings.HasPrefix(filename, pathToDelete + "/") {
+        if filename == pathToDelete || strings.HasPrefix(filename, pathToDelete+"/") {
             delete(f.openFiles, filename)
             theFile.Close()
         }
     }
-    // logJSON(f.openFiles)
-    for filename, _ := range f.conds {
-        if filename == pathToDelete || strings.HasPrefix(filename, pathToDelete + "/") {
+    for filename := range f.conds {
+        if filename == pathToDelete || strings.HasPrefix(filename, pathToDelete+"/") {
             delete(f.conds, filename)
             delete(f.condCounts, filename)
-            // broadcast? or just let it time out
+        }
+    }
+
+    parentDir := filepath.Dir(pathToDelete)
+    orderFilePath := filepath.Join(parentDir, "_order.txt")
+    if _, err := os.Stat(orderFilePath); err == nil {
+        updatedLines := []string{}
+        toDeleteID := filepath.Base(thePath) 
+
+        file, err := os.Open(orderFilePath)
+        if err != nil {
+            return fmt.Errorf("failed to open _order.txt: %v", err)
+        }
+        defer file.Close()
+
+        scanner := bufio.NewScanner(file)
+        for scanner.Scan() {
+            line := scanner.Text()
+            if !strings.Contains(line, toDeleteID) { 
+                updatedLines = append(updatedLines, line)
+            }
+        }
+        if err := scanner.Err(); err != nil {
+            return fmt.Errorf("failed to read _order.txt: %v", err)
+        }
+
+        tempFilePath := orderFilePath + ".tmp"
+        tempFile, err := os.Create(tempFilePath)
+        if err != nil {
+            return fmt.Errorf("failed to create temp _order.txt: %v", err)
+        }
+        defer tempFile.Close()
+
+        for _, line := range updatedLines {
+            if _, err := tempFile.WriteString(line + "\n"); err != nil {
+                return fmt.Errorf("failed to write to temp _order.txt: %v", err)
+            }
+        }
+
+        if err := os.Rename(tempFilePath, orderFilePath); err != nil {
+            return fmt.Errorf("failed to replace _order.txt: %v", err)
         }
     }
 
