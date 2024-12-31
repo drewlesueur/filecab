@@ -1062,6 +1062,10 @@ func (f *Filecab) HardDelete(thePath string) error {
         if err := os.Rename(tempFilePath, orderFilePath); err != nil {
             return fmt.Errorf("failed to replace _order.txt: %v", err)
         }
+        if file, exists := f.openFiles[orderFilePath]; exists {
+            file.Close()
+            delete(f.openFiles, orderFilePath)
+        }
     }
 
     return nil
