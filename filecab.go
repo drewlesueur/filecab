@@ -319,7 +319,7 @@ var timeEncoding2 = [36]string{
 
 
 
-func toBase60(n int) string {
+func ToBase60(n int) string {
 	if n == 0 {
 		return timeEncoding[0]
 	}
@@ -1485,7 +1485,7 @@ var counter int
 // deprecated
 func generateUniqueID() string {
     counter = (counter + 1) % 216000 // 60 ^ 3
-    return padString(toBase60(counter), 3)
+    return padString(ToBase60(counter), 3)
 }
 
 func generateUniqueID2() string {

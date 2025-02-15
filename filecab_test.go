@@ -1,3 +1,6 @@
+// How to run:
+// go test
+
 package filecab
 
 import (
@@ -24,10 +27,25 @@ const maxLoop = 1_000 * 10
 // const maxLoop = 10
 const repeat = 1
 const extraFields = 100
-// const maxLoop = 10
 
-func xTestWeird(t *testing.T) {
-    // Thistests that after a hardDelete, openFile caches are cleaned
+
+// func TestMissingOrderBug(t *testing.T) {
+//     fc.MustHardDelete("somestuff")
+//     for i := 0; i < 60; i++ {
+//         // go func() {
+//             v := map[string]string{
+//                 "id": "somestuff/",
+//                 "color": "aquamarine",
+//             }
+//             err := fc.Save(v, nil)
+//             assert.Nil(t, err)
+//         // }()
+//     }
+//     time.Sleep(60 * time.Second)
+// }
+
+func TestWeird(t *testing.T) {
+    // This tests that after a hardDelete, openFile caches are cleaned
     fc.MustHardDelete("somestuff")
     v := map[string]string{
         "id": "somestuff/hiya",
@@ -51,15 +69,12 @@ func xTestWeird(t *testing.T) {
     records, err := fc.LoadAll("somestuff/")
     assert.Nil(t, err)
     assert.Equal(t, 1, len(records))
-    logJSON(records)
     
     v2, err = fc.LoadRecord("somestuff/hello")
     assert.Nil(t, err)
     assert.Equal(t, v2["unique_key"], v["unique_key"])
-    logJSON(v2)
-    
-    
 }
+
 func TestSaveWithPredefinedId(t *testing.T) {
     fc.MustHardDelete("somestuff")
     v := map[string]string{
@@ -73,15 +88,43 @@ func TestSaveWithPredefinedId(t *testing.T) {
     v2, err := fc.LoadRecord("somestuff/hiya")
     assert.Nil(t, err)
     assert.Equal(t, v["color"], v2["color"])
-    logJSON(v2)
 
     vs, err := fc.LoadAll("somestuff")
     assert.Nil(t, err)
     assert.Equal(t, 1, len(vs))
-    logJSON(vs)
 }
 
-func xTestUniqueKey(t *testing.T) {
+
+func TestSaveWithPredefinedId2(t *testing.T) {
+    // with and without unique key
+    fc.MustHardDelete("somestuff")
+    v := map[string]string{
+        "id": "somestuff/hiya",
+        "color": "aquamarine",
+    }
+    err := fc.Save(v, nil)
+    assert.Nil(t, err)
+
+    v2, err := fc.LoadRecord("somestuff/hiya")
+    assert.Nil(t, err)
+    logJSON(v2)
+    
+    w := map[string]string{
+        "id": "somestuff/",
+        "unique_key": "hiya2",
+        "color": "brown",
+    }
+    err = fc.Save(w, nil)
+    assert.Nil(t, err)
+
+    w2, err := fc.LoadRecord("somestuff/hiya2")
+    assert.Nil(t, err)
+    logJSON(w2)
+}
+
+
+
+func TestUniqueKey(t *testing.T) {
     fc.MustHardDelete("somestuff")
     for i := 0; i < 5; i++ {
         v := map[string]string{
@@ -93,7 +136,6 @@ func xTestUniqueKey(t *testing.T) {
         records, err := fc.LoadAll("somestuff/")
         assert.Nil(t, err)
         assert.Equal(t, 1, len(records))
-        logJSON(records)
     }
 }
 
@@ -568,7 +610,7 @@ func xTestMongoInsertion(t *testing.T) {
 
 
 
-func ExampleSerialize() {
+func ExampleSerializeRecord() {
     r := map[string]string{
         "name": "Drew",
         "birthdate": "1984-11-12",
@@ -609,7 +651,7 @@ func setup() {
 }
 
 func ExampleToBase60() {
-    fmt.Println(toBase60(60 * 60 * 60 * 60))
+    fmt.Println(ToBase60(60 * 60 * 60 * 60))
     
     // Output:
     // 10000
