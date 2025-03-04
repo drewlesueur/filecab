@@ -1630,6 +1630,81 @@ func LimitedLoop(count int, concurrency int, fn func(int)) {
     }
 }
 
+// Reorder moves the record with the given full id to the specified new index
+// in the parent's _order.txt file. If newIndex is out of bounds or the id is not found,
+// it returns an error. The function is careful to write to a temporary file first,
+// so that if any error occurs, the original order file remains unchanged.
+func (f *Filecab) Reorder(id string, newIndex int) error {
+    f.mu.Lock()
+    defer f.mu.Unlock()
+
+    if id == "" {
+        return fmt.Errorf("id cannot be empty")
+    }
+    parts := strings.Split(id, "/")
+    if len(parts) < 2 {
+        return fmt.Errorf("invalid id format: %s", id)
+    }
+    localID := parts[len(parts)-1]
+    parentDir := strings.Join(parts[:len(parts)-1], "/")
+    orderPath := filepath.Join(f.RootDir, parentDir, "_order.txt")
+
+    data, err := os.ReadFile(orderPath)
+    if err != nil {
+        return fmt.Errorf("failed to read _order.txt at %s: %v", orderPath, err)
+    }
+    lines := strings.Split(string(data), "\n")
+    if len(lines) > 0 && lines[len(lines)-1] == "" {
+        lines = lines[:len(lines)-1]
+    }
+
+    currentIndex := -1
+    for i, line := range lines {
+        if line == localID {
+            currentIndex = i
+            break
+        }
+    }
+    if currentIndex == -1 {
+        return fmt.Errorf("record id %s not found in _order.txt", localID)
+    }
+
+    lines = append(lines[:currentIndex], lines[currentIndex+1:]...)
+
+    if newIndex < 0 || newIndex > len(lines) {
+        return fmt.Errorf("new index %d is out of bounds, valid range: 0 to %d", newIndex, len(lines))
+    }
+
+    updatedLines := make([]string, 0, len(lines)+1)
+    updatedLines = append(updatedLines, lines[:newIndex]...)
+    updatedLines = append(updatedLines, localID)
+    updatedLines = append(updatedLines, lines[newIndex:]...)
+
+    tempFilePath := orderPath + ".tmp"
+    tempFile, err := os.Create(tempFilePath)
+    if err != nil {
+        return fmt.Errorf("failed to create temporary order file: %v", err)
+    }
+    for _, line := range updatedLines {
+        if _, err := tempFile.WriteString(line + "\n"); err != nil {
+            tempFile.Close()
+            return fmt.Errorf("failed to write to temporary order file: %v", err)
+        }
+    }
+    if err := tempFile.Close(); err != nil {
+        return fmt.Errorf("failed to close temporary order file: %v", err)
+    }
+
+    if err := os.Rename(tempFilePath, orderPath); err != nil {
+        return fmt.Errorf("failed to replace _order.txt: %v", err)
+    }
+    if file, exists := f.openFiles[orderPath]; exists {
+        file.Close()
+        delete(f.openFiles, orderPath)
+    }
+    return nil
+}
+
 func logJSON(v any) {
     b, err := json.MarshalIndent(v, "", "    ")
     if err != nil {
