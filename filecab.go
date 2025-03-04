@@ -1646,6 +1646,9 @@ func (f *Filecab) Reorder(id string, newIndex int) error {
         return fmt.Errorf("invalid id format: %s", id)
     }
     localID := parts[len(parts)-1]
+    if len(localID) < idSize {
+        localID = localID + strings.Repeat("_", idSize-len(localID))
+    }
     parentDir := strings.Join(parts[:len(parts)-1], "/")
     orderPath := filepath.Join(f.RootDir, parentDir, "_order.txt")
 
